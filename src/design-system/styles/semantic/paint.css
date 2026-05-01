@@ -1,0 +1,44 @@
+/*
+Paint API
+
+Paint is opt-in and applies only to Block (and primitives composed from Block).
+This is an explicit design boundary: paint is never applied to arbitrary elements.
+
+Paint controls whether resolved color variables are applied.
+It does not define colors (variants) or how they are mapped (appearance).
+
+Channels (composable):
+- background → applies background-color
+- foreground → applies text color
+- border → applies border + border-color
+
+Presets (exclusive):
+- surface → background + border (no text color)
+- all → background + foreground + border
+
+Examples:
+  data-paint="background foreground"  // Composable channels
+  data-paint="surface"               // Preset (do not mix with channels)
+*/
+
+/* Foreground channel */
+.block[data-paint~="foreground"],
+.block[data-paint="all"] {
+    color: var(--cc-foreground-color, inherit);
+}
+
+/* Background channel (and presets that include background) */
+.block[data-paint~="background"],
+.block[data-paint="all"],
+.block[data-paint="surface"] {
+    background-color: var(--cc-background-color, transparent);
+}
+
+/* Border channel (and presets that include border) */
+.block[data-paint~="border"],
+.block[data-paint="all"],
+.block[data-paint="surface"] {
+    border-width: var(--cc-border-width, 1px);
+    border-style: var(--cc-border-style, solid);
+    border-color: var(--cc-border-color, var(--cc-foreground-on-surface, currentcolor));
+}

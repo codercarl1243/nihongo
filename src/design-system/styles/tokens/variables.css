@@ -1,0 +1,5 @@
+:root {
+    --overlay-transition-duration: 250ms;
+    --expanded-burger-menu-width: min(300px, 80%);
+    --expanded-button--width: min(300px, 80%);
+}

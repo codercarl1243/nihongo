@@ -1,0 +1,46 @@
+  .layout-wrapper {
+    --layout-min-width: var(--cc-bp-xs);
+    --layout-max-width: var(--cc-bp-characters);
+    --layout-padding: clamp(var(--cc-spacing-xs), 1vw, var(--cc-spacing-xxl));
+    --layout-bleed: clamp(var(--cc-spacing-xs), 1.5vw, var(--cc-spacing-3xl));
+
+    display: grid;
+    width: clamp(var(--layout-min-width), 100%, var(--layout-max-width));
+    margin-inline: auto;
+
+    grid-template-columns:
+      [padding-start] var(--layout-padding) [bleed-start] var(--layout-bleed) [content-start] 1fr [content-end] var(--layout-bleed) [bleed-end] var(--layout-padding) [padding-end];
+
+  }
+
+  @media (min-width: 48rem) {
+    .layout-wrapper {
+      --layout-padding: clamp(var(--cc-spacing-lg), 2vw, var(--cc-spacing-xxl));
+      --layout-bleed: clamp(var(--cc-spacing-lg), 5.5vw, var(--cc-spacing-3xl));
+    }
+  }
+
+  .layout-wrapper>* {
+    grid-column: content;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .layout-wrapper>.width-content {
+    grid-column: content;
+  }
+
+  .layout-wrapper>.width-bleed {
+    grid-column: bleed;
+  }
+
+  /* True full-width: spans edge to edge */
+  .layout-wrapper>.width-full {
+    grid-column: padding;
+  }
+
+
+  .main-wrapper {
+    width: min(100%, var(--cc-bp-xl));
+    margin-inline: auto;
+  }

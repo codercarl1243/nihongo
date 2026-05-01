@@ -1,0 +1,50 @@
+:where(.flow-sm>*:not(:last-child)) {
+  margin-block-end: var(--cc-spacing-sm);
+}
+
+:where(.flow-md>*:not(:last-child)) {
+  margin-block-end: var(--cc-spacing-md);
+}
+
+:where(.flow-lg>*:not(:last-child)) {
+  margin-block-end: var(--cc-spacing-lg);
+}
+
+:where(.flow-xl>*:not(:last-child)) {
+  margin-block-end: var(--cc-spacing-xl);
+}
+
+:where(.flow-xxl>*:not(:last-child)) {
+  margin-block-end: var(--cc-spacing-xxl);
+}
+
+:where(.flow-3xl>*:not(:last-child)) {
+  margin-block-end: var(--cc-spacing-3xl);
+}
+
+@media screen and (max-width: 35rem) {
+
+  :where(.flow-sm>*:not(:last-child)) {
+    margin-block-end: var(--cc-spacing-xs);
+  }
+
+  :where(.flow-md>*:not(:last-child)) {
+    margin-block-end: var(--cc-spacing-sm);
+  }
+
+  :where(.flow-lg>*:not(:last-child)) {
+    margin-block-end: var(--cc-spacing-md);
+  }
+
+  :where(.flow-xl>*:not(:last-child)) {
+    margin-block-end: var(--cc-spacing-lg);
+  }
+
+  :where(.flow-xxl>*:not(:last-child)) {
+    margin-block-end: var(--cc-spacing-xl);
+  }
+
+  :where(.flow-3xl>*:not(:last-child)) {
+    margin-block-end: var(--cc-spacing-xxl);
+  }
+}

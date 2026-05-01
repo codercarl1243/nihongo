@@ -1,0 +1,17 @@
+:root {
+    /* Border radius tokens */
+    --cc-radius-none: 0;
+    --cc-radius-sm: 0.25rem;   /* 4px */
+    --cc-radius-md: 0.5rem;    /* 8px */
+    --cc-radius-lg: 1rem;      /* 16px */
+    --cc-radius-circle: 50%;   /* Perfect circle for squares */
+    --cc-radius-full: 9999px;  /* Pill shape / fully rounded */
+
+    /* Border widths */
+    --cc-border-width-thin: 1px;
+    --cc-border-width-thick: 2px;
+
+    /* Border styles */
+    --cc-border-style-solid: solid;
+    --cc-border-style-dashed: dashed;
+}

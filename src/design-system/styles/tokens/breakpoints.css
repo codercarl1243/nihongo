@@ -1,0 +1,8 @@
+    :root {
+    --cc-bp-xs: 18.75rem;      /* 300px */
+    --cc-bp-sm: 35rem;         /* 560px */
+    --cc-bp-md: 48rem;         /* 768px */
+    --cc-bp-lg: 75rem;         /* 1200px */
+    --cc-bp-xl: 90rem;         /* 1440px */
+    --cc-bp-characters: 80ch;  /* Maximum length of content */
+    }

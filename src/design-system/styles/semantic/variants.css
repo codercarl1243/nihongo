@@ -1,0 +1,143 @@
+/*
+Variant API
+
+Variants define semantic color palettes.
+They provide named color tokens that describe intent
+(e.g. primary, danger, success), not visual treatment.
+
+Variants DO NOT apply paint or styling directly.
+
+They expose the following semantic tokens:
+- --cc-variant-bg                → primary emphasis color
+- --cc-variant-fg                → text / icon color on variant backgrounds
+- --cc-variant-surface           → low-emphasis / tonal surface color
+- --cc-variant-fg-on-surface     → Text / icon color intended for use on --cc-variant-surface.
+- --cc-variant-border            → border color for variant emphasis
+
+These tokens are:
+- mapped by the appearance layer
+- applied by the paint layer
+- inherited by child elements and decorators (e.g. list markers)
+*/
+
+/* Resolve variant tokens into shared color variables when present */
+[data-variant] {
+  --cc-background-color: var(--cc-variant-bg);
+  --cc-foreground-color: var(--cc-variant-fg);
+  --foreground-muted: color-mix(in srgb,
+      var(--cc-variant-fg-on-surface, var(--cc-foreground-on-surface)) 65%,
+      var(--cc-variant-surface, var(--cc-surface)));
+  --cc-border-color: var(--cc-variant-border);
+  --cc-surface-color: var(--cc-variant-surface);
+}
+
+[data-variant="inverse"] {
+  --_surface: color-mix(in srgb,
+      var(--cc-foreground-on-surface) 85%,
+      var(--cc-surface) 15%);
+  --_fg: var(--cc-surface);
+
+  --cc-variant-bg: var(--_surface);
+  --cc-variant-fg: var(--_fg);
+  --cc-variant-surface: var(--_surface);
+  --cc-variant-fg-on-surface: var(--_fg);
+  --cc-variant-border: color-mix(in srgb,
+      var(--_fg) 50%,
+      var(--_surface) 50%);
+}
+
+[data-variant="neutral"] {
+  --cc-variant-bg: var(--cc-surface);
+  --cc-variant-fg: var(--cc-foreground-on-surface);
+  --cc-variant-border: var(--cc-color-neutral-400);
+  --cc-variant-surface: var(--cc-surface);
+  --cc-variant-fg-on-surface: var(--cc-foreground-on-surface);
+}
+
+[data-variant="muted"] {
+  --cc-variant-bg: var(--cc-color-neutral-200);
+  --cc-variant-fg: var(--cc-color-neutral-600);
+  --cc-variant-border: var(--cc-color-neutral-700);
+  --cc-variant-surface: var(--cc-color-neutral-200);
+  --cc-variant-fg-on-surface: var(--cc-color-neutral-600);
+}
+
+[data-variant="light"] {
+  --cc-variant-bg: var(--cc-color-neutral-100);
+  --cc-variant-fg: var(--cc-color-neutral-900);
+  --cc-variant-border: var(--cc-color-neutral-700);
+  --cc-variant-surface: var(--cc-color-neutral-200);
+  --cc-variant-fg-on-surface: var(--cc-color-neutral-600);
+}
+
+[data-variant="dark"] {
+  --cc-variant-bg: var(--cc-color-neutral-900);
+  --cc-variant-fg: var(--cc-color-neutral-100);
+  --cc-variant-border: var(--cc-color-neutral-200);
+  --cc-variant-surface: var(--cc-color-neutral-700);
+  --cc-variant-fg-on-surface: var(--cc-color-neutral-200);
+}
+
+[data-variant="primary"] {
+  --cc-variant-bg: var(--cc-color-primary-400);
+  --cc-variant-fg: var(--cc-color-neutral-100);
+  --cc-variant-border: var(--cc-color-primary-600);
+  --cc-variant-fg-on-surface: var(--cc-color-primary-600);
+  --cc-variant-surface: var(--cc-color-primary-100);
+}
+
+[data-variant="secondary"] {
+  --cc-variant-bg: var(--cc-color-secondary-400);
+  --cc-variant-fg: var(--cc-color-neutral-100);
+  --cc-variant-border: var(--cc-color-secondary-600);
+  --cc-variant-fg-on-surface: var(--cc-color-secondary-600);
+  --cc-variant-surface: var(--cc-color-secondary-100);
+}
+
+[data-variant="accent"] {
+  --cc-variant-bg: var(--cc-color-accent-400);
+  --cc-variant-fg: var(--cc-color-neutral-100);
+  --cc-variant-border: var(--cc-color-accent-600);
+  --cc-variant-fg-on-surface: var(--cc-color-accent-600);
+  --cc-variant-surface: var(--cc-color-accent-100);
+}
+
+[data-variant="danger"] {
+  --cc-variant-bg: var(--cc-color-danger-400);
+  --cc-variant-fg: var(--cc-color-neutral-100);
+  --cc-variant-border: var(--cc-color-danger-600);
+  --cc-variant-fg-on-surface: var(--cc-color-danger-600);
+  --cc-variant-surface: var(--cc-color-danger-100);
+}
+
+[data-variant="warning"] {
+  --cc-variant-bg: var(--cc-color-warning-400);
+  --cc-variant-fg: var(--cc-color-neutral-900);
+  --cc-variant-border: var(--cc-color-warning-600);
+  --cc-variant-fg-on-surface: var(--cc-color-warning-600);
+  --cc-variant-surface: var(--cc-color-warning-100);
+}
+
+[data-variant="success"] {
+  --cc-variant-bg: var(--cc-color-success-400);
+  --cc-variant-fg: var(--cc-color-neutral-100);
+  --cc-variant-border: var(--cc-color-success-600);
+  --cc-variant-fg-on-surface: var(--cc-color-success-600);
+  --cc-variant-surface: var(--cc-color-success-100);
+}
+
+[data-variant="info"] {
+  --cc-variant-bg: var(--cc-color-info-200);
+  --cc-variant-fg: var(--cc-color-neutral-700);
+  --cc-variant-border: var(--cc-color-info-600);
+  --cc-variant-fg-on-surface: var(--cc-color-info-600);
+  --cc-variant-surface: var(--cc-color-info-100);
+}
+
+[data-variant="transparent"] {
+  --cc-variant-bg: transparent;
+  --cc-variant-fg: transparent;
+  --cc-variant-border: transparent;
+  --cc-variant-fg-on-surface: transparent;
+  --cc-variant-surface: transparent;
+}

@@ -1,0 +1,19 @@
+button[data-appearance="ghost"]:not(:disabled, [aria-disabled="true"]) {
+    
+    &:hover {
+        --cc-background-color: color-mix(in srgb, currentcolor 15%, var(--cc-foreground-on-surface));
+    }
+
+    &:focus-visible {
+        --cc-background-color: color-mix(in srgb, currentcolor 40%, var(--cc-foreground-on-surface));
+
+        outline-offset: var(--cc-spacing-xs);
+    }
+
+    &:active,
+    &[data-pressed="true"] {
+        --cc-background-color: color-mix(in srgb, currentcolor 20%, var(--cc-foreground-on-surface));
+
+        outline-style: dashed;
+    }
+}

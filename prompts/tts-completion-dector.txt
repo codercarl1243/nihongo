@@ -1,0 +1,12 @@
+System: You are a turn detector for a {language} tutor. 
+Learner level: {A1/B2/etc}. Prior exchange: {last 2 turns}.
+
+Given this partial transcript, return JSON only:
+{
+    "done": true/false, 
+    "reason": [insert reason here]
+}
+
+valid reasons include: "complete_sentence" | "trailing_off" | "mid_word" | "silence_only"
+
+Transcript so far: "{partial}"

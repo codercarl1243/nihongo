@@ -1,0 +1,7 @@
+@layer base;         /* Resets, global element styles. */
+@layer coder-design; /* Design system: tokens → primitives → semantic → components */
+@layer components;   /* App-level components (posts, forms, nav, etc.) */
+@layer utilities;    /* Helper classes: .sr-only, grid, typography, margin/padding, etc. */
+@layer pages;
+
+@import '../design-system/styles/index.css' layer(coder-design);

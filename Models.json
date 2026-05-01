@@ -1,0 +1,7 @@
+{"models": [
+    {"id": "Qwen3-TTS",
+"path": "~/llm_models/mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16"},
+{"id": "Qwen3.6-27b-4bit",
+    "path": "~/llm_models/mlx-community/Qwen3.6-27B-4bit"
+}
+]}

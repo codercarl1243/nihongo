@@ -1,0 +1,41 @@
+/*
+Appearance API
+
+Appearances map semantic variant tokens to resolved color variables.
+They DO NOT apply paint directly.
+
+Actual painting (background, foreground, border) is opt-in and controlled
+by the `data-paint` attribute on the component.
+
+variant → provides tokens
+appearance → maps tokens
+paint → applies them
+*/
+
+/* Strong, high-emphasis application (buttons, badges, pills) */
+[data-appearance="filled"] {
+    --cc-background-color: var(--cc-variant-bg);
+    --cc-foreground-color: var(--cc-variant-fg);
+    --cc-border-color: var(--cc-variant-border);
+}
+
+/* Medium emphasis with visible outline */
+[data-appearance="outlined"] {
+    --cc-background-color: transparent;
+    --cc-foreground-color: var(--cc-variant-bg);
+    --cc-border-color: var(--cc-variant-bg);
+}
+
+/* Low emphasis, text-forward appearance */
+[data-appearance="ghost"] {
+    --cc-background-color: transparent;
+    --cc-foreground-color: var(--cc-variant-bg);
+    --cc-border-color: transparent;
+}
+
+/* Tonal surface application (callouts, notices, containers) */
+[data-appearance="tonal"] {
+    --cc-background-color: var(--cc-variant-surface);
+    --cc-foreground-color: var(--cc-variant-fg-on-surface);
+    --cc-border-color: var(--cc-variant-border);
+}

@@ -1,0 +1,190 @@
+@layer reset {
+    .button {
+        -webkit-appearance: none;
+        appearance: none;
+        background: none;
+        border-radius: var(--cc-radius-md);
+        font: inherit;
+        line-height: 1.25;
+        white-space: nowrap;
+        text-align: center;
+        vertical-align: middle;
+    }
+}
+
+@layer structure {
+    .button {
+        --button-font-size: 1rem;
+        --button-margin: var(--cc-spacing-sm);
+        --button-padding-y: var(--cc-spacing-sm);
+        --button-padding-x: var(--cc-spacing-xs);
+        --button-outline-offset: -3px;
+
+        /* WCAG Target Size Requirements */
+        /* AA: 24px x 24px minimum, AAA: 44px x 44px minimum */
+        min-width: 44px;
+        min-height: 44px;
+        display: grid;
+        gap: var(--cc-spacing-sm);
+        align-items: center;
+        margin: var(--button-margin);
+        padding: var(--button-padding-y) var(--button-padding-x);
+        box-shadow: var(--button-shadow, none);
+        outline: 1px solid transparent;
+        outline-offset: var(--button-outline-offset);
+        font-size: var(--button-font-size);
+        transition: box-shadow 0.2s ease,
+            outline 0.2s ease,
+            outline-offset 0.2s ease,
+            transform 0.2s ease,
+            color 0.2s ease,
+            background-color 0.2s ease;
+
+
+        &.button--icon-only {
+            --button-padding-y: 0;
+            --button-padding-x: 0;
+            --button-margin: 0;
+
+            grid-template-columns: 1fr;
+            place-content: center;
+
+            .button__content {
+                display: none;
+            }
+
+            & .icon,
+            & .spinner {
+                grid-column: 1;
+            }
+
+            &[data-loading="true"] {
+                .icon {
+                    display: none;
+                }
+            }
+        }
+
+        /* Layout - reserve space for icon and spinner to prevent layout shift */
+        &.button-w-icon {
+            --button-icon-width: 24px;
+
+            grid-template-areas: "icon content";
+            grid-template-columns: var(--button-icon-width) fit-content(100%);
+
+            .icon {
+                grid-area: icon;
+                justify-self: center;
+            }
+
+            &>* {
+                grid-area: content;
+            }
+        }
+
+        &.button-w-spinner {
+            --button-spinner-width: 24px;
+
+            grid-template-areas: "content spinner";
+            grid-template-columns: fit-content(100%) var(--button-spinner-width);
+
+            .spinner {
+                grid-area: spinner;
+                justify-self: center;
+            }
+
+            &>* {
+                grid-area: content;
+            }
+        }
+
+        &.button-w-icon.button-w-spinner {
+            grid-template-areas: "icon content spinner";
+            grid-template-columns: var(--button-icon-width) fit-content(100%) var(--button-spinner-width);
+        }
+
+        /* Interactive states - UX communication through outlines and transforms */
+        &:hover {
+            --button-shadow: 1px 1px 4px rgba(0, 0, 0, 0.2);
+            --button-outline-offset: 3px;
+
+            outline-color: var(--cc-border-color, currentcolor);
+        }
+
+        &:focus-visible {
+            --button-shadow: none;
+            --button-outline-offset: 4px;
+
+            outline-width: 2px;
+            outline-color: var(--cc-border-color, currentcolor);
+        }
+
+        &:active,
+        &[data-pressed="true"] {
+            --button-outline-offset: 1px;
+
+            outline-style: dotted;
+            outline-color: var(--cc-border-color, currentcolor);
+            transform: translateY(1px);
+        }
+
+        /* The button can't be disabled using this base button but other packages might add disabled to the button on the DOM. We should maintain consistent styling */
+        &:is(:disabled, [aria-disabled="true"]),
+        &[data-variant]:is(:disabled, [aria-disabled="true"]),
+        &[data-style]:is(:disabled, [aria-disabled="true"]) {
+            --cc-background-color: var(--cc-color-neutral-200);
+            --cc-foreground-color: var(--cc-color-neutral-800);
+            --cc-border-color: var(--cc-color-neutral-400);
+
+            cursor: not-allowed;
+
+            &:hover,
+            &:active {
+                --button-shadow: none;
+                --button-outline-offset: -3px;
+
+                outline-color: transparent;
+                transform: none;
+            }
+
+            &:focus-visible {
+                outline-color: var(--cc-color-neutral-600);
+            }
+        }
+
+        &[data-loading="true"] {
+            cursor: wait;
+
+            &:hover:not(:focus-visible) {
+                --button-outline-offset: -3px;
+
+                outline-color: transparent;
+                box-shadow: none;
+                transform: none;
+            }
+        }
+    }
+
+    /* Only actual button elements get pointer cursor */
+    button.button {
+        cursor: pointer;
+    }
+
+    /* Touch device optimization */
+    @media screen and (any-pointer: coarse) {
+        .button:not(.button--icon-only, .switch) {
+            --button-margin: 12px;
+            --button-padding-y: 12px;
+            --button-padding-x: 20px;
+        }
+    }
+}
+
+
+/* Respect user motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    .button {
+        transition: none !important;
+        animation: none !important;
+    }
+}

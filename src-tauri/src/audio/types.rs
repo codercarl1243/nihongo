@@ -1,0 +1,1 @@
+pub type AudioBuffer = Vec<f32>;

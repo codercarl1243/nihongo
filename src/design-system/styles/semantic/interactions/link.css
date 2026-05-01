@@ -1,0 +1,95 @@
+/*
+Link color follows paint, not appearance.
+
+The default link color uses --cc-link-on-surface.
+When a background is explicitly painted, links switch
+to --cc-link-on-filled to maintain contrast.
+*/
+
+.block,
+.block[data-appearance="outlined"],
+.block[data-appearance="ghost"] {
+
+    .link,
+    &.link {
+        --cc-link-color: var(--cc-link-on-surface);
+    }
+}
+
+.block[data-paint="all"],
+.block[data-paint~="background"],
+.block[data-appearance="tonal"][data-paint~="background"],
+.block[data-appearance="tonal"][data-paint="surface"],
+.block[data-appearance="tonal"][data-paint="all"] {
+
+    .link,
+    &.link {
+        --cc-link-color: var(--cc-link-on-filled);
+    }
+}
+
+.link__button {
+    --outline-offset: -3px;
+    --outline-color: transparent;
+
+    outline: 1px solid var(--outline-color);
+    outline-offset: var(--outline-offset);
+    transition: text-decoration-color 0.2s ease,
+        outline 0.2s ease,
+        outline-offset 0.2s ease;
+}
+
+.link__button:hover,
+.link__button:focus-visible {
+    --outline-offset: var(--cc-spacing-xs);
+    --outline-color: var(--cc-border-color);
+}
+
+/* When the link IS the filled surface, use variant foreground — not the link-on-filled token
+   which is designed for links embedded within a filled container, not the filled element itself */
+.link[data-appearance="filled"] {
+    --cc-link-color-override: var(--cc-foreground-color);
+}
+
+/* When a .surface-frame is also a link — suppress underline, outline on interaction.
+   The outline follows the frame's effective border-radius at any nesting depth. */
+.link.surface-frame {
+    --cc-link-color-override: currentcolor;
+
+    text-decoration: none;
+}
+
+.link.surface-frame:focus-visible,
+.link.surface-frame:hover {
+    outline: 2px solid var(--cc-border-color, currentcolor);
+    outline-offset: var(--cc-spacing-xs);
+    border-radius: var(--cc-frame-radius-effective, var(--cc-frame-radius));
+}
+
+/* Nested inside another surface-frame — reduce radius to match inset geometry */
+.surface-frame .link.surface-frame {
+    --cc-frame-radius-effective: clamp(0px,
+            calc(var(--cc-frame-radius) - var(--cc-frame-inset)),
+            999px);
+}
+
+.link[data-appearance="ghost"]:not(:disabled, [aria-disabled="true"]) {
+
+    &:hover {
+        --cc-background-color: var(--cc-variant-surface);
+        --cc-link-color-override: var(--cc-color-link-400);
+    }
+
+    &:focus-visible {
+        --cc-background-color: color-mix(in srgb, currentcolor 40%, var(--cc-foreground-on-surface));
+
+        outline-offset: var(--cc-spacing-xs);
+    }
+
+    &:active,
+    &[data-pressed="true"] {
+        --cc-background-color: color-mix(in srgb, currentcolor 20%, var(--cc-foreground-on-surface));
+
+        outline-style: dashed;
+    }
+}

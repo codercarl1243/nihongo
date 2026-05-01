@@ -1,0 +1,10 @@
+/* Layer priority is determined by import order: last import = highest priority.
+   tokens → primitives → components → semantic (semantic wins) */
+   
+@import './base/reset.css' layer(cc-reset);
+@import './layout/index.css' layer(cc-layout);
+@import './tokens/index.css' layer(cc-tokens);
+@import './primitives/index.css' layer(cc-primitives);
+@import './utils/index.css' layer(cc-utilities);
+@import './components/index.css' layer(cc-components);
+@import './semantic/index.css' layer(cc-semantic);

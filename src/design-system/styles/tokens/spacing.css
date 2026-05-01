@@ -1,0 +1,9 @@
+:root {
+    --cc-spacing-xs: 0.25rem;
+    --cc-spacing-sm: 0.5rem;
+    --cc-spacing-md: 0.75rem;
+    --cc-spacing-lg: 1rem;
+    --cc-spacing-xl: 1.5rem;
+    --cc-spacing-xxl: 2rem;
+    --cc-spacing-3xl: 4rem;
+}

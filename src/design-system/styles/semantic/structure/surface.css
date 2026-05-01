@@ -1,0 +1,149 @@
+/*
+=================================
+ Surface API – Framed Surfaces
+=================================
+
+The Surface API defines a framed surface with a border and radius
+that behaves correctly when nested inside other surfaces.
+
+This API solves a common visual problem:
+when two bordered surfaces are nested, identical border radii
+cause the inner curve to look incorrect. The inner radius must
+be reduced to remain visually parallel to the outer curve.
+
+Surface-frame handles this automatically.
+
+---------------------------------
+ What this API is
+---------------------------------
+
+• A semantic frame for visually distinct surfaces
+• Border + radius only (no background, padding, or color)
+• Geometry-aware when nested
+• Token-driven and composable
+
+---------------------------------
+ What this API is NOT
+---------------------------------
+
+• It does NOT apply color
+• It does NOT apply background
+• It does NOT apply padding
+• It does NOT replace paint / variant / appearance
+
+Surface-frame is purely structural.
+
+---------------------------------
+ Core Concepts
+---------------------------------
+
+• --cc-frame-radius
+  The base corner radius for this surface.
+
+• --cc-frame-inset
+  The distance between this surface's border and a nested surface's border.
+  This value is used to compute the nested radius.
+
+• --cc-frame-radius-nested
+  A derived radius:
+    nestedRadius = frameRadius - frameInset
+
+This keeps nested borders visually parallel.
+
+---------------------------------
+ Nesting Behavior
+---------------------------------
+
+When a .surface-frame is nested inside another .surface-frame:
+
+• The inner surface automatically receives a reduced radius
+• No extra classes are required
+• This works at any nesting depth
+
+---------------------------------
+ Usage
+---------------------------------
+
+<div class="surface-frame p-lg frame-inset-lg">
+  <div class="surface-frame p-md">
+    …
+  </div>
+</div>
+
+The outer frame defines the geometry.
+Inner frames inherit and adapt automatically.
+
+---------------------------------
+ Frame Inset Utilities
+---------------------------------
+
+Inset utilities control how much the nested radius is reduced.
+They do NOT add spacing or padding.
+
+.frame-inset-0   → no inset (flat nesting)
+.frame-inset-xs  → var(--cc-spacing-xs)
+.frame-inset-sm  → var(--cc-spacing-sm)
+.frame-inset-md  → var(--cc-spacing-md)
+.frame-inset-lg  → var(--cc-spacing-lg)
+.frame-inset-xl  → var(--cc-spacing-xl)
+.frame-inset-xxl → var(--cc-spacing-xxl)
+
+---------------------------------
+ Design Rule
+---------------------------------
+
+Padding controls space.
+Frame inset controls curvature.
+
+Keep them separate.
+*/
+
+.surface-frame {
+    /* Base geometry */
+    --cc-frame-radius: var(--cc-radius-md);
+
+    /* Default inset (overridable) */
+    --cc-frame-inset-base: var(--cc-spacing-xs);
+    --cc-frame-inset: var(--cc-frame-inset-base);
+
+    border: var(--cc-border-width, 1px) var(--cc-border-style, solid) var(--cc-border-color);
+    border-radius: var(--cc-frame-radius-effective, var(--cc-frame-radius));
+}
+
+/* Nested surface frames derive a smaller radius */
+.surface-frame .surface-frame {
+    --cc-frame-radius-effective: clamp(0px,
+            calc(var(--cc-frame-radius) - var(--cc-frame-inset)),
+            999px);
+}
+
+/* Geometry utilities — single responsibility */
+.frame-inset-0 {
+    --cc-frame-inset-base: 0px;
+}
+
+.frame-inset-xs {
+    --cc-frame-inset-base: var(--cc-spacing-xs);
+}
+
+.frame-inset-sm {
+    --cc-frame-inset-base: var(--cc-spacing-sm);
+}
+
+.frame-inset-md {
+    --cc-frame-inset-base: var(--cc-spacing-md);
+}
+
+.frame-inset-lg {
+    --cc-frame-inset-base: var(--cc-spacing-lg);
+}
+
+.frame-inset-xl {
+    --cc-frame-inset-base: var(--cc-spacing-xl);
+}
+
+.frame-inset-xxl {
+    --cc-frame-inset-base: var(--cc-spacing-xxl);
+}
+
+/* Surface as Link — interaction behaviour lives in interactions/link.css */

@@ -1,0 +1,54 @@
+/*
+Theme API
+
+Themes define global, environment-level color tokens.
+They describe the default canvas and baseline text colors
+before any component opts into styling.
+
+Themes do NOT:
+- define variants
+- apply component styling
+- control appearance or paint behavior
+
+Theme tokens are consumed by:
+- the variant layer (as defaults)
+- global elements (e.g. body)
+*/
+
+/* light theme - Defaulted when no preference is set */
+:root:not([data-theme]),
+:root[data-theme="light"] {
+    --cc-surface: var(--cc-color-neutral-100);
+    --cc-foreground-on-surface: var(--cc-color-neutral-900);
+    --cc-text-muted: var(--cc-color-neutral-500);
+    --cc-link-on-surface: var(--cc-color-link-400);
+    --cc-link-on-filled: var(--cc-color-link-400);
+    --cc-link-color: var(--cc-link-on-surface);
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+    --cc-surface: var(--cc-color-neutral-900);
+    --cc-foreground-on-surface: var(--cc-color-neutral-100);
+    --cc-text-muted: var(--cc-color-neutral-300);
+    --cc-link-on-surface: var(--cc-color-link-200);
+    --cc-link-on-filled: var(--cc-color-link-400);
+    --cc-link-color: var(--cc-link-on-surface);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme]) {
+        --cc-surface: var(--cc-color-neutral-900);
+        --cc-foreground-on-surface: var(--cc-color-neutral-100);
+        --cc-text-muted: var(--cc-color-neutral-300);
+        --cc-link-on-surface: var(--cc-color-link-200);
+        --cc-link-on-filled: var(--cc-color-link-400);
+        --cc-link-color: var(--cc-link-on-surface);
+    }
+}
+
+/* Global defaults */
+body {
+    background-color: var(--cc-surface, initial);
+    color: var(--cc-foreground-on-surface, initial);
+}
