@@ -5,5 +5,4 @@ edition = "2024"
 
 [dependencies]
 whisper-rs = "0.16.0"
-symphonia = { version = "0.5", features = ["all"] }
-anyhow = { workspace = true }
+anyhow = "1"

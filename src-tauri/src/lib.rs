@@ -14,7 +14,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
-            stt::commands::transcribe_audio_cmd
+            // stt::commands::transcribe_audio_cmd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
