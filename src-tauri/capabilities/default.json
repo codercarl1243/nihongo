@@ -7,9 +7,6 @@
   ],
   "permissions": [
     "core:default",
-    "opener:default",
-    "fs:default",
-    "fs:allow-write-file",
-    "fs:allow-app-write-recursive"
+    "opener:default"
   ]
 }

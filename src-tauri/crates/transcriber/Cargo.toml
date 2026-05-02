@@ -1,8 +1,0 @@
-[package]
-name = "transcriber"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-whisper-rs = "0.16.0"
-anyhow = "1"
