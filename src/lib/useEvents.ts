@@ -1,29 +1,37 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useEffect } from 'react';
-import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { useAppStore } from './store';
 
 export default function useEvents() {
-    const queryClient = useQueryClient();
+    const addMessage      = useAppStore((s) => s.addMessage);
+    const appendToken     = useAppStore((s) => s.appendToken);
+    const finalizeStream  = useAppStore((s) => s.finalizeStream);
+    const setSessionStatus = useAppStore((s) => s.setSessionStatus);
 
-    useEffect(function listenForEventsUseEffect() {
-        const listenEvents: UnlistenFn[] = [];
+    useEffect(() => {
+        const cleanup: UnlistenFn[] = [];
 
-        const registerEvents = async () => {
-            // update Zustand immediately,
-            // then invalidate React Query so it refetches in the background
-            const unlisten = await listen('audio-transcribed', () => {
-                queryClient.invalidateQueries({ queryKey: ['transcription'] });
-            });
-            listenEvents.push(unlisten);
-        };
-
-        registerEvents();
-
-        function _listenForEventsUseEffect_Cleanup() {
-            listenEvents.forEach((fn) => fn());
+        async function register() {
+            cleanup.push(
+                await listen<{ text: string }>('transcript', (e) =>
+                    addMessage('user', e.payload.text)
+                ),
+                await listen<{ token: string }>('response_token', (e) =>
+                    appendToken(e.payload.token)
+                ),
+                await listen<{ full_response: string; milestone: boolean }>('response_done', (e) =>
+                    finalizeStream(e.payload.full_response)
+                ),
+                await listen<{ greeting: string }>('session_ready', () =>
+                    setSessionStatus('ready')
+                ),
+                await listen<{ message: string }>('error', (e) =>
+                    console.error('[backend]', e.payload.message)
+                ),
+            );
         }
 
-        return _listenForEventsUseEffect_Cleanup;
-    }, [queryClient])
-
-}   
+        register();
+        return () => cleanup.forEach((fn) => fn());
+    }, [addMessage, appendToken, finalizeStream, setSessionStatus]);
+}

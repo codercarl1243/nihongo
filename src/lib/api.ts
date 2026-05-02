@@ -1,7 +1,13 @@
-import {invoke} from "@tauri-apps/api/core";
+import { invoke } from '@tauri-apps/api/core';
 
-export async function transcribeAudio(path: string): Promise<string> {
-    return await invoke("transcribe_audio_cmd", { 
-        path
-     });
+export async function startSession(): Promise<void> {
+    return invoke('start_session');
+}
+
+export async function stopSession(): Promise<void> {
+    return invoke('stop_session');
+}
+
+export async function bargeIn(): Promise<void> {
+    return invoke('barge_in');
 }
