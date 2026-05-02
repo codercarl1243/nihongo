@@ -18,31 +18,35 @@ The tutor understands natural mixed-language speech ("How do I use ありがと�
 ┌─────────────────────────────────────────────────────────────┐
 │                        Tauri App                            │
 │                                                             │
-│   React Frontend                  src-tauri/src/lib.rs      │
-│   ├── Waveform indicator          ├── Tauri commands         │
-│   ├── Live transcript stream      ├── audio_engine client    │
-│   ├── Tutor response stream       └── tutor sidecar client   │
-│   └── Vocabulary progress UI                                 │
+│   React Frontend (🔄 not yet wired)  src-tauri/src/lib.rs  │
+│   ├── ChatWindow                     ├── start/stop_session │
+│   ├── Live transcript stream         ├── barge_in command   │
+│   ├── Tutor response streaming       ├── handle_turn()      │
+│   └── Vocabulary progress UI        └── compact_context()   │
 └──────────────┬──────────────────────────┬───────────────────┘
                │                          │
                ▼                          ▼
 ┌──────────────────────┐    ┌─────────────────────────────────┐
 │   Rust Crates        │    │   Python Sidecar                │
 │                      │    │                                 │
-│   audio_engine/      │───▶│   Qwen3-ASR (mlx-audio)          │
-│   ├── capture.rs     │    │   ├── Receives audio chunks      │
-│   ├── resampler.rs   │    │   ├── Streams transcript tokens  │
-│   └── vad.rs         │    │   ├── Streams tutor response     │
-│                      │    │   └── Signals barge-in support   │
-│   tutor/             │    │                                 │
-│   └── client.rs      │    │   Qwen3-TTS (mlx-audio)           │
-│                      │    │   ├── Receives streamed text     │
-│   db/                │    │   ├── Streams PCM audio back     │
-│   ├── vocabulary.rs  │    │   └── 97ms first-packet latency  │
-│   ├── jlpt.rs        │    │                                 │
-│   └── srs.rs         │◀───│   Exposes OpenAI-compatible API  │
-└──────────────────────┘    │   on localhost:8091              │
-                            └─────────────────────────────────┘
+│   audio_engine/      │───▶│   POST /asr/transcribe          │
+│   ├── capture.rs     │    │   f32 PCM → transcript text     │
+│   ├── manager.rs     │    │                                 │
+│   ├── player.rs      │    │   POST /llm/chat (SSE)          │
+│   ├── resampler.rs   │    │   messages[] → token stream     │
+│   └── vad.rs         │    │                                 │
+│                      │    │   POST /tts/speak               │
+│   llm/               │    │   text → WAV bytes              │
+│   └── client.rs      │    │                                 │
+│                      │◀───│   GET /health                   │
+│   tutor/             │    │   localhost:8091                │
+│   ├── prompt.rs      │    └─────────────────────────────────┘
+│   └── session.rs     │
+│                      │
+│   db/                │
+│   ├── store.rs       │
+│   └── types.rs       │
+└──────────────────────┘
 ```
 
 ---
@@ -51,34 +55,47 @@ The tutor understands natural mixed-language speech ("How do I use ありがと�
 
 ```
 src-tauri/
-├── Cargo.toml                  ← workspace root
+├── Cargo.toml                  ← workspace root (members: audio_engine, llm, tutor, db)
 ├── src/
 │   ├── main.rs                 ← Tauri bootstrap
-│   └── lib.rs                  ← Tauri commands, wires crates together
+│   └── lib.rs                  ← Tauri commands, full turn pipeline, context compaction
 └── crates/
-    ├── audio_engine/           ← mic capture, resampling, barge-in VAD
+    ├── audio_engine/           ← mic capture, resampling, VAD, playback
     │   ├── Cargo.toml
     │   └── src/
     │       ├── lib.rs
     │       ├── capture.rs      ← cpal input stream → ringbuf
+    │       ├── manager.rs      ← AudioManager, EngineConfig; emits partial + turn_end streams
+    │       ├── player.rs       ← AudioPlayer: cpal output, barge-in drain
     │       ├── resampler.rs    ← 48kHz stereo → 16kHz mono f32
-    │       └── vad.rs          ← Silero VAD, utterance-end and barge-in detection
+    │       └── vad.rs          ← Silero VAD, speech detection
     │
-    ├── tutor/                  ← sidecar HTTP client, conversation state, session manager
+    ├── llm/                    ← sidecar HTTP client
     │   ├── Cargo.toml
     │   └── src/
     │       ├── lib.rs
-    │       ├── client.rs       ← calls ASR, LLM, and TTS sidecar endpoints
-    │       ├── conversation.rs ← turn history, token counter, learner context
-    │       └── session.rs      ← milestone detection, RAM check, new-session spin-up, hot-swap
+    │       └── client.rs       ← SidecarClient: transcribe, chat_stream (SSE), speak
     │
-    └── db/                     ← vocabulary tracking, JLPT, SRS
+    ├── tutor/                  ← conversation state, session manager, system prompt
+    │   ├── Cargo.toml
+    │   └── src/
+    │       ├── lib.rs
+    │       ├── prompt.rs       ← build_system_prompt from LearnerProfile + LessonSummary
+    │       ├── session.rs      ← TutorSession: turn history, token counter, compaction trigger
+    │       └── types.rs        ← Message, Role, TutorResponse
+    │
+    └── db/                     ← SQLite: sessions, turns, vocabulary, SRS, learner profile
         ├── Cargo.toml
         └── src/
             ├── lib.rs
-            ├── vocabulary.rs   ← word records, encounter counts
-            ├── jlpt.rs         ← N5→N1 word lists, level assignment
-            └── srs.rs          ← spaced repetition scheduling
+            ├── store.rs        ← Db struct: all read/write operations
+            └── types.rs        ← LearnerProfile, LessonSummary, VocabEntry
+
+sidecar/                        ← Python process, serves all three model endpoints
+├── server.py                   ← FastAPI: /asr/transcribe, /llm/chat (SSE), /tts/speak, /health
+├── models.py                   ← lazy-loads ASR, LLM, TTS from Models.json at startup
+├── requirements.txt
+└── start.sh
 ```
 
 ---
@@ -349,33 +366,37 @@ All three models load simultaneously at ~18GB total, leaving ~30GB free for the 
 Each step should be independently runnable and testable before moving to the next.
 
 ### Step 1 — audio_engine ✅
-Mic capture → ringbuf → resampler → 16kHz mono f32 stream. VAD confirms speech detection. Barge-in signal working.
+Mic capture → ringbuf → resampler → 16kHz mono f32 stream. VAD confirms speech detection. `AudioManager` emits two channels: `partial` (rolling chunks while speaking) and `turn_end` (full utterance on silence). `AudioPlayer` handles cpal output and barge-in drain.
 
-### Step 2 — Python sidecar
-Set up the sidecar process loading models from `Models.json`. Verify ASR with a mixed English/Japanese clip ("what does もも mean?"). Verify LLM chat endpoint returns `{ transcript, response, milestone }` JSON. Verify TTS WebSocket streams PCM.
+### Step 2 — Python sidecar ✅
+FastAPI server (`sidecar/server.py`) loading all three models lazily from `Models.json`. Three endpoints working:
+- `POST /asr/transcribe` — base64 f32 PCM → transcript text
+- `POST /llm/chat` — messages[] → SSE token stream
+- `POST /tts/speak` — text → WAV bytes
+- `GET /health` — readiness probe
 
-### Step 3 — tutor crate
-Rust HTTP client streams audio chunks to sidecar, receives streaming text. Parse transcript vs response from output. Stream text tokens to TTS endpoint, receive PCM back.
+### Step 3 — llm + tutor crates ✅
+`llm` crate: `SidecarClient` with `transcribe()`, `chat_stream()` (SSE), and `speak()`. Parses SSE `data:` lines, assembles token stream. `tutor` crate: `TutorSession` tracks message history and token estimate; `build_system_prompt` constructs the system message from learner profile and last lesson summary.
 
-### Step 4 — cpal output
-Play PCM audio from TTS through cpal output stream. Implement barge-in: VAD fires during playback → cancel TTS stream → restart audio input flow.
+### Step 4 — cpal output ✅
+`AudioPlayer` (`audio_engine/player.rs`) opens a cpal output stream backed by a ring buffer. `play_chunk()` pushes f32 PCM. `stop()` sets a barge-in flag that drains the buffer and silences output immediately. `resume()` clears the flag for the next TTS response.
 
-### Step 5 — Tauri commands
-Wire `audio_engine` and `tutor` into Tauri commands. Emit events to React: `transcript_token`, `response_token`, `audio_chunk`, `barge_in`.
+### Step 5 — Tauri commands ✅
+`lib.rs` wires everything into three commands: `start_session`, `stop_session`, `barge_in`. The `handle_turn` async function runs the full per-utterance pipeline (ASR → session → LLM stream → persist turn → compact if needed → TTS playback). Events emitted to React: `transcript`, `response_token`, `response_done`, `error`.
 
-### Step 6 — React UI
-Waveform indicator (VAD driven). Live transcript display. Tutor response streaming display. Audio playback from Tauri events.
+### Step 6 — React UI 🔄
+`ChatWindow` component exists with message list and input. **Not yet connected to Tauri** — `useChat.ts` still uses hardcoded test messages. `useEvents.ts` and `api.ts` reference old command/event names from an earlier design. Next: wire `transcript`, `response_token`, and `response_done` events into the chat state, and call `start_session` / `stop_session` from the audio button.
 
-### Step 7 — db crate
-SQLite schema. Vocabulary extraction from transcript. JLPT lookup. SRS scheduling. Learner profile.
+### Step 7 — db crate 🔄
+Full SQLite schema in place via `store.rs` (sessions, conversation_turns, lesson_summaries, vocabulary, encounters, srs_schedule, learner_profile). Session tracking, turn recording, learner profile, lesson summary save/load, and SRS scheduling all implemented. **Not yet wired**: `upsert_vocabulary` and `record_encounter` exist but `handle_turn` does not yet call them — vocabulary extraction from transcripts is the remaining piece.
 
-### Step 8 — Dynamic system prompt
-Build LLM system prompt from db state: learner level, words due for review, boundary words to introduce. Tune conversation to JLPT level.
+### Step 8 — Dynamic system prompt ✅
+`tutor/prompt.rs` builds the system message from `LearnerProfile` (current JLPT level, total words) and the latest `LessonSummary` (topics covered, continue-from hint). Called in `TutorSession::new` and again after each context compaction.
 
-### Step 9 — Context compaction
-Implement the session manager: token counter, milestone detection from LLM JSON, lesson summary generation, new `messages[]` context assembly, atomic pointer swap. Add `sessions`, `conversation_turns`, and `lesson_summaries` tables to db crate. Flush turns and SRS updates at each milestone.
+### Step 9 — Context compaction ✅
+`TutorSession` tracks a rolling token estimate. When a milestone turn crosses 80% of the 4096-token budget, `compact_context` in `lib.rs` streams a structured lesson summary from the LLM, saves it to SQLite, rebuilds the system prompt, and calls `reset_context` to swap in a fresh message list. The swap is a pointer change — no pause in the conversation.
 
-### Step 10 — Polish
+### Step 10 — Polish ⬜
 Barge-in UX tuning. VAD silence threshold configuration. Voice selection for TTS.
 
 ---
@@ -387,25 +408,34 @@ Barge-in UX tuning. VAD silence threshold configuration. Voice selection for TTS
 members = [
     ".",
     "crates/audio_engine",
+    "crates/llm",
     "crates/tutor",
     "crates/db",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-anyhow      = "1"
-tokio       = { version = "1", features = ["full"] }
+anyhow       = "1"
+tokio        = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
-serde       = { version = "1", features = ["derive"] }
-serde_json  = "1"
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+reqwest      = { version = "0.12", features = ["json", "stream"] }
+rusqlite     = { version = "0.31", features = ["bundled"] }
 
 [dependencies]
-tauri        = { version = "2", features = ["protocol-asset"] }
-audio_engine = { path = "crates/audio_engine" }
-tutor        = { path = "crates/tutor" }
-db           = { path = "crates/db" }
-anyhow       = { workspace = true }
-tokio        = { workspace = true }
+tauri             = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+audio_engine      = { path = "crates/audio_engine" }
+llm               = { path = "crates/llm" }
+tutor             = { path = "crates/tutor" }
+db                = { path = "crates/db" }
+anyhow            = { workspace = true }
+tokio             = { workspace = true }
+tokio-stream      = { workspace = true }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+dirs              = "6"
 ```
 
 ---
