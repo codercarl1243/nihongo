@@ -43,6 +43,12 @@ struct ErrorEvent         { message: String }
 
 #[tauri::command]
 async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    if !state.llm.is_ready().await {
+        return Err(
+            "Sidecar is not running. Start it first with ./test-backend.sh".to_string()
+        );
+    }
+
     let streams = state.audio
         .lock().unwrap()
         .start(EngineConfig::default())

@@ -153,6 +153,16 @@ impl SidecarClient {
         Ok(bytes.to_vec())
     }
 
+    /// Single-shot health ping — returns true if the sidecar is up right now.
+    pub async fn is_ready(&self) -> bool {
+        self.http
+            .get(format!("{}/health", self.base))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
+
     /// Wait until the sidecar is ready (retries for up to `timeout_secs`).
     pub async fn wait_until_ready(&self, timeout_secs: u64) -> Result<()> {
         let deadline = std::time::Instant::now()
