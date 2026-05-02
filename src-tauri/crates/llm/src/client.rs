@@ -1,0 +1,206 @@
+use anyhow::{Context, Result};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use tokio_stream::{Stream, StreamExt};
+
+const SIDECAR_URL: &str = "http://127.0.0.1:8091";
+
+// ---------------------------------------------------------------------------
+// Shared types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+impl ChatMessage {
+    pub fn system(content: impl Into<String>) -> Self {
+        Self { role: "system".into(), content: content.into() }
+    }
+    pub fn user(content: impl Into<String>) -> Self {
+        Self { role: "user".into(), content: content.into() }
+    }
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self { role: "assistant".into(), content: content.into() }
+    }
+}
+
+/// Parsed from every SSE token emitted by /llm/chat.
+/// The LLM is instructed to emit a final JSON object containing the full
+/// structured response once it has finished generating.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TutorToken {
+    pub token: String,
+}
+
+/// The complete structured response assembled from the token stream.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TutorResponse {
+    pub transcript: String,
+    pub response: String,
+    pub milestone: bool,
+}
+
+// ---------------------------------------------------------------------------
+// SidecarClient
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct SidecarClient {
+    http: Client,
+    base: String,
+}
+
+impl SidecarClient {
+    pub fn new() -> Self {
+        Self {
+            http: Client::new(),
+            base: SIDECAR_URL.to_string(),
+        }
+    }
+
+    pub fn with_url(url: impl Into<String>) -> Self {
+        Self { http: Client::new(), base: url.into() }
+    }
+
+    /// Send a 16kHz mono f32 audio clip to the ASR endpoint.
+    /// Returns the transcript as plain text.
+    pub async fn transcribe(&self, audio: &[f32]) -> Result<String> {
+        let raw: Vec<u8> = audio
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        let audio_b64 = base64_encode(&raw);
+
+        #[derive(Serialize)]
+        struct Req { audio_b64: String }
+        #[derive(Deserialize)]
+        struct Resp { transcript: String }
+
+        let resp: Resp = self.http
+            .post(format!("{}/asr/transcribe", self.base))
+            .json(&Req { audio_b64 })
+            .send()
+            .await
+            .context("ASR request failed")?
+            .error_for_status()
+            .context("ASR returned error status")?
+            .json()
+            .await
+            .context("failed to parse ASR response")?;
+
+        Ok(resp.transcript)
+    }
+
+    /// Send a conversation history to the LLM and stream tokens back.
+    /// The caller collects tokens and assembles the full TutorResponse.
+    pub async fn chat_stream(
+        &self,
+        messages: &[ChatMessage],
+    ) -> Result<impl Stream<Item = Result<String>>> {
+        #[derive(Serialize)]
+        struct Req<'a> { messages: &'a [ChatMessage] }
+
+        let resp = self.http
+            .post(format!("{}/llm/chat", self.base))
+            .json(&Req { messages })
+            .send()
+            .await
+            .context("LLM chat request failed")?
+            .error_for_status()
+            .context("LLM returned error status")?;
+
+        let byte_stream = resp.bytes_stream();
+
+        let token_stream = byte_stream.map(|chunk| -> Result<String> {
+            let bytes = chunk.context("stream read error")?;
+            let text = std::str::from_utf8(&bytes).context("invalid UTF-8 in stream")?;
+
+            // SSE lines look like: `data: {"token": "..."}\n\n` or `data: [DONE]\n\n`
+            let mut tokens = String::new();
+            for line in text.lines() {
+                let Some(data) = line.strip_prefix("data: ") else { continue };
+                if data == "[DONE]" { break; }
+                if let Ok(t) = serde_json::from_str::<TutorToken>(data) {
+                    tokens.push_str(&t.token);
+                }
+            }
+            Ok(tokens)
+        });
+
+        Ok(token_stream)
+    }
+
+    /// Send text to the TTS endpoint, receive WAV bytes back.
+    pub async fn speak(&self, text: &str) -> Result<Vec<u8>> {
+        #[derive(Serialize)]
+        struct Req<'a> { text: &'a str }
+
+        let bytes = self.http
+            .post(format!("{}/tts/speak", self.base))
+            .json(&Req { text })
+            .send()
+            .await
+            .context("TTS request failed")?
+            .error_for_status()
+            .context("TTS returned error status")?
+            .bytes()
+            .await
+            .context("failed to read TTS audio")?;
+
+        Ok(bytes.to_vec())
+    }
+
+    /// Wait until the sidecar is ready (retries for up to `timeout_secs`).
+    pub async fn wait_until_ready(&self, timeout_secs: u64) -> Result<()> {
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_secs(timeout_secs);
+
+        loop {
+            if self.http
+                .get(format!("{}/health", self.base))
+                .send()
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                anyhow::bail!("sidecar did not become ready within {timeout_secs}s");
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    }
+}
+
+impl Default for SidecarClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn base64_encode(data: &[u8]) -> String {
+    use std::io::Write;
+    // Use the standard base64 alphabet without padding differences
+    const TABLE: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut out = Vec::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = if chunk.len() > 1 { chunk[1] as usize } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as usize } else { 0 };
+        out.push(TABLE[(b0 >> 2) & 0x3f]);
+        out.push(TABLE[((b0 << 4) | (b1 >> 4)) & 0x3f]);
+        out.push(if chunk.len() > 1 { TABLE[((b1 << 2) | (b2 >> 6)) & 0x3f] } else { b'=' });
+        out.push(if chunk.len() > 2 { TABLE[b2 & 0x3f] } else { b'=' });
+    }
+    String::from_utf8(out).unwrap()
+}
