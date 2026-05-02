@@ -25,9 +25,11 @@ export default function useEvents() {
                 await listen<{ greeting: string }>('session_ready', () =>
                     setSessionStatus('ready')
                 ),
-                await listen<{ message: string }>('error', (e) =>
-                    console.error('[backend]', e.payload.message)
-                ),
+                await listen<{ message: string }>('error', (e) => {
+                    console.error('[backend]', e.payload.message);
+                    addMessage('system', `Error: ${e.payload.message}`);
+                    setSessionStatus('idle');
+                }),
             );
         }
 

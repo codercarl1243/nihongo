@@ -4,7 +4,7 @@ export type SessionStatus = 'idle' | 'starting' | 'ready';
 
 export type Message = {
     id: string;
-    sender: 'user' | 'tutor';
+    sender: 'user' | 'tutor' | 'system';
     text: string;
 };
 
@@ -14,7 +14,7 @@ type AppState = {
     streamingText: string;
 
     setSessionStatus: (status: SessionStatus) => void;
-    addMessage: (sender: 'user' | 'tutor', text: string) => void;
+    addMessage: (sender: 'user' | 'tutor' | 'system', text: string) => void;
     appendToken: (token: string) => void;
     finalizeStream: (fullText: string) => void;
 };

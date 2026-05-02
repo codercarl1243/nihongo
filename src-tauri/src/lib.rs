@@ -58,7 +58,14 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
 
     let llm = state.llm.clone();
     let mut turn_stream = streams.turn_end;
+    let mut partial_stream = streams.partial;
     let greeting_app = app.clone();
+
+    // Keep the partial receiver alive; drain without consuming.
+    // Replace this task with speculative ASR when that feature is added.
+    tokio::spawn(async move {
+        while partial_stream.next().await.is_some() {}
+    });
 
     tokio::spawn(async move {
         while let Some(audio_chunk) = turn_stream.next().await {
