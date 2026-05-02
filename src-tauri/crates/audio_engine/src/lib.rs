@@ -54,11 +54,13 @@
 
 
 pub mod capture;
+pub mod player;
 pub mod resampler;
 pub mod vad;
 pub mod manager;
 
 pub use manager::{AudioManager, EngineConfig};
 pub use capture::{AudioCapture, CaptureConfig};
+pub use player::AudioPlayer;
 pub use resampler::{Resampler16k, TARGET_SAMPLE_RATE};
 pub use vad::SpeechDetector;
