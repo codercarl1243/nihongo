@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use audio_engine::{AudioManager, AudioPlayer, EngineConfig};
+use chrono::Timelike as _;
 use db::Db;
 use llm::{ChatMessage, SidecarClient};
 use serde::Serialize;
@@ -32,6 +33,8 @@ struct ResponseTokenEvent { token: String }
 #[derive(Clone, Serialize)]
 struct ResponseDoneEvent  { full_response: String, milestone: bool }
 #[derive(Clone, Serialize)]
+struct SessionReadyEvent  { greeting: String }
+#[derive(Clone, Serialize)]
 struct ErrorEvent         { message: String }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +58,7 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
 
     let llm = state.llm.clone();
     let mut turn_stream = streams.turn_end;
+    let greeting_app = app.clone();
 
     tokio::spawn(async move {
         while let Some(audio_chunk) = turn_stream.next().await {
@@ -65,6 +69,12 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
                     let _ = app2.emit("error", ErrorEvent { message: e.to_string() });
                 }
             });
+        }
+    });
+
+    tokio::spawn(async move {
+        if let Err(e) = send_greeting(greeting_app.clone()).await {
+            let _ = greeting_app.emit("error", ErrorEvent { message: e.to_string() });
         }
     });
 
@@ -86,6 +96,79 @@ async fn stop_session(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 fn barge_in(state: State<'_, AppState>) {
     state.player.lock().unwrap().stop();
+}
+
+// ---------------------------------------------------------------------------
+// Greeting / warm-up
+// ---------------------------------------------------------------------------
+
+fn build_greeting() -> String {
+    let hour = chrono::Local::now().hour();
+    let time_of_day = match hour {
+        5..=11  => "morning",
+        12..=16 => "afternoon",
+        17..=20 => "evening",
+        _       => "evening",
+    };
+    format!(
+        "Good {time_of_day}, my name is Carl. \
+         Please let me know when you are ready to start our Japanese lesson."
+    )
+}
+
+/// Sends the time-of-day greeting through the full LLM→TTS→play pipeline.
+/// Emits `session_ready` once TTS audio has been queued for playback.
+async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
+    let state = app.state::<AppState>();
+    let greeting = build_greeting();
+
+    // Push greeting as the opening user turn and snapshot the message history.
+    let messages: Vec<ChatMessage> = {
+        let mut sg = state.session.lock().unwrap();
+        let s = sg.as_mut().ok_or_else(|| anyhow::anyhow!("no active session"))?;
+        s.push_user(&greeting);
+        s.current_messages().to_vec()
+    };
+
+    // Stream LLM response, forwarding tokens to the frontend.
+    let llm = state.llm.clone();
+    let mut full_text = String::new();
+    {
+        let mut stream = llm.chat_stream(&messages).await?;
+        while let Some(chunk) = stream.next().await {
+            let token = chunk?;
+            if !token.is_empty() {
+                full_text.push_str(&token);
+                app.emit("response_token", ResponseTokenEvent { token })?;
+            }
+        }
+    }
+
+    let tutor_resp = parse_response_pub(&full_text);
+    app.emit("response_done", ResponseDoneEvent {
+        full_response: tutor_resp.response.clone(),
+        milestone: tutor_resp.milestone,
+    })?;
+
+    // Persist turn.
+    {
+        let mut sg = state.session.lock().unwrap();
+        let s = sg.as_mut().ok_or_else(|| anyhow::anyhow!("no active session"))?;
+        let db = state.db.lock().unwrap();
+        s.record_turn_sync(&greeting, &tutor_resp, &db)?;
+    }
+
+    // TTS playback.
+    if !tutor_resp.response.is_empty() {
+        state.player.lock().unwrap().resume();
+        let wav = llm.speak(&tutor_resp.response).await?;
+        let pcm = wav_to_f32(&wav)?;
+        state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
+    }
+
+    app.emit("session_ready", SessionReadyEvent { greeting: tutor_resp.response.clone() })?;
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +236,7 @@ async fn handle_turn(
         state.player.lock().unwrap().resume();
         let wav = llm.speak(&tutor_resp.response).await?;
         let pcm = wav_to_f32(&wav)?;
-        state.player.lock().unwrap().play_chunk(&pcm)?;
+        state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
     }
 
     Ok(())
