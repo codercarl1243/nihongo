@@ -1,7 +1,6 @@
 """Loads and holds all three models from Models.json at startup."""
 
 import json
-import os
 from pathlib import Path
 
 
@@ -30,28 +29,28 @@ class Models:
         print(f"[models] TTS  : {self.tts_path}")
 
         print("[models] loading LLM…")
-        from mlx_lm import load as lm_load
+        from mlx_lm import load as lm_load, stream_generate
         self.llm_model, self.llm_tokenizer = lm_load(self.llm_path)
+        print("[models] LLM loaded — warming up MLX kernels…")
+        for _ in stream_generate(self.llm_model, self.llm_tokenizer, "hi", max_tokens=1):
+            break
         print("[models] LLM ready")
 
-        print("[models] loading TTS…")
-        from mlx_audio.tts.models.kokoro import KokoroModel
-        # Qwen3-TTS is loaded the same way as other mlx-audio TTS models
-        self._tts_model = None  # lazy-loaded on first use to avoid import errors
-        self._tts_path = self.tts_path
-        print("[models] TTS will load on first use")
-
-        print("[models] ASR will load on first use")
+        # ASR and TTS are lazy-loaded on first use
         self._asr_model = None
-
-    def get_tts(self):
-        if self._tts_model is None:
-            import mlx_audio
-            self._tts_model = mlx_audio.load(self._tts_path)
-        return self._tts_model
+        self._tts_model = None
+        print("[models] ASR + TTS will load on first use")
 
     def get_asr(self):
         if self._asr_model is None:
-            import mlx_audio
-            self._asr_model = mlx_audio.load(self.asr_path)
+            from mlx_audio.stt import load
+            self._asr_model = load(self.asr_path)
+            print("[models] ASR ready")
         return self._asr_model
+
+    def get_tts(self):
+        if self._tts_model is None:
+            from mlx_audio.tts import load
+            self._tts_model = load(self.tts_path)
+            print("[models] TTS ready")
+        return self._tts_model

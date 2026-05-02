@@ -56,6 +56,7 @@ class ChatRequest(BaseModel):
 
 class SpeakRequest(BaseModel):
     text: str
+    voice: str = "A warm, clear Japanese female tutor voice with a calm and encouraging tone"
 
 
 # ---------------------------------------------------------------------------
@@ -78,11 +79,15 @@ async def transcribe(req: TranscribeRequest):
 
 def _run_asr(asr_model, audio: np.ndarray) -> str:
     """Blocking ASR inference — runs in a thread executor."""
-    import mlx_audio
-    result = mlx_audio.transcribe(audio, model=asr_model, language="auto")
-    if isinstance(result, dict):
-        return result.get("text", "")
-    return str(result)
+    import mlx.core as mx
+    from mlx_audio.stt.generate import generate_transcription
+    audio_mx = mx.array(audio)
+    segments = generate_transcription(model=asr_model, audio=audio_mx)
+    if segments is None:
+        return ""
+    if isinstance(segments, list):
+        return "".join(s.get("text", "") if isinstance(s, dict) else getattr(s, "text", str(s)) for s in segments)
+    return str(segments)
 
 
 # ---------------------------------------------------------------------------
@@ -116,8 +121,9 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
 
     def _generate():
         try:
-            for token in stream_generate(model, tokenizer, prompt, max_tokens=max_tokens):
-                queue.put_nowait(token)
+            for response in stream_generate(model, tokenizer, prompt, max_tokens=max_tokens):
+                text = response.text if hasattr(response, "text") else str(response)
+                queue.put_nowait(text)
         finally:
             queue.put_nowait(None)
 
@@ -139,18 +145,27 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
 @app.post("/tts/speak")
 async def speak(req: SpeakRequest):
     loop = asyncio.get_event_loop()
-    wav_bytes = await loop.run_in_executor(None, _run_tts, req.text)
+    wav_bytes = await loop.run_in_executor(None, _run_tts, req.text, req.voice)
     return Response(content=wav_bytes, media_type="audio/wav")
 
 
-def _run_tts(text: str) -> bytes:
+def _run_tts(text: str, voice: str) -> bytes:
     """Blocking TTS inference — runs in a thread executor."""
-    import mlx_audio
+    import numpy as np
     import soundfile as sf
 
     tts = _models.get_tts()
-    audio, sample_rate = mlx_audio.synthesize(text, model=tts)
 
+    audio_chunks = []
+    sample_rate = 24000
+    for result in tts.generate(text, instruct=voice):
+        audio_chunks.append(np.array(result.audio))
+        sample_rate = result.sample_rate
+
+    if not audio_chunks:
+        raise ValueError("TTS produced no audio")
+
+    audio = np.concatenate(audio_chunks)
     buf = io.BytesIO()
     sf.write(buf, audio, sample_rate, format="WAV", subtype="PCM_16")
     return buf.getvalue()

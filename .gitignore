@@ -24,3 +24,12 @@ dist-ssr
 *.sw?
 
 test-pipeline/ggml-base.bin
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Generated audio
+*.wav
