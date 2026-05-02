@@ -9,6 +9,10 @@ edition = "2021"
 name = "nihongo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "integration"
+path = "src/bin/integration.rs"
+
 [workspace]
 members = [
     ".",
