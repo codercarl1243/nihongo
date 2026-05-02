@@ -29,13 +29,13 @@ The tutor understands natural mixed-language speech ("How do I use ありがと�
 ┌──────────────────────┐    ┌─────────────────────────────────┐
 │   Rust Crates        │    │   Python Sidecar                │
 │                      │    │                                 │
-│   audio_engine/      │───▶│   Qwen3-Omni (vLLM-Omni)       │
+│   audio_engine/      │───▶│   Qwen3-ASR (mlx-audio)          │
 │   ├── capture.rs     │    │   ├── Receives audio chunks      │
 │   ├── resampler.rs   │    │   ├── Streams transcript tokens  │
 │   └── vad.rs         │    │   ├── Streams tutor response     │
 │                      │    │   └── Signals barge-in support   │
 │   tutor/             │    │                                 │
-│   └── client.rs      │    │   Qwen3-TTS (vLLM-Omni)        │
+│   └── client.rs      │    │   Qwen3-TTS (mlx-audio)           │
 │                      │    │   ├── Receives streamed text     │
 │   db/                │    │   ├── Streams PCM audio back     │
 │   ├── vocabulary.rs  │    │   └── 97ms first-packet latency  │
@@ -62,14 +62,15 @@ src-tauri/
     │       ├── lib.rs
     │       ├── capture.rs      ← cpal input stream → ringbuf
     │       ├── resampler.rs    ← 48kHz stereo → 16kHz mono f32
-    │       └── vad.rs          ← Silero VAD, barge-in detection only
+    │       └── vad.rs          ← Silero VAD, utterance-end and barge-in detection
     │
-    ├── tutor/                  ← sidecar HTTP client, conversation state
+    ├── tutor/                  ← sidecar HTTP client, conversation state, session manager
     │   ├── Cargo.toml
     │   └── src/
     │       ├── lib.rs
-    │       ├── client.rs       ← streams audio to Omni, receives text+audio
-    │       └── conversation.rs ← turn history, learner context
+    │       ├── client.rs       ← calls ASR, LLM, and TTS sidecar endpoints
+    │       ├── conversation.rs ← turn history, token counter, learner context
+    │       └── session.rs      ← milestone detection, RAM check, new-session spin-up, hot-swap
     │
     └── db/                     ← vocabulary tracking, JLPT, SRS
         ├── Cargo.toml
@@ -89,13 +90,15 @@ src-tauri/
 ```
 1. cpal captures mic audio at native sample rate (48kHz stereo typical)
 2. Resampler converts to 16kHz mono f32
-3. 100ms chunks stream continuously to Python sidecar via HTTP
-4. Qwen3-Omni receives chunks, understands when user has finished
-5. Omni streams text tokens back → Tauri emits to React (live transcript)
-6. Omni response tokens stream simultaneously to Qwen3-TTS
-7. TTS streams PCM audio back → cpal output stream → speaker
-8. VAD monitors mic during playback → barge-in detected → interrupt TTS
-9. db crate extracts vocabulary from transcript, updates word records
+3. VAD detects speech start → audio accumulates in utterance buffer
+4. VAD detects trailing silence → utterance complete, send buffered clip to ASR
+5. ASR returns transcript text → passed to LLM with conversation context
+6. LLM returns structured JSON { transcript, response, milestone }
+7. transcript streamed to React (live display)
+8. response tokens stream to Qwen3-TTS
+9. TTS streams PCM audio back → cpal output stream → speaker
+10. VAD monitors mic during TTS playback → barge-in detected → interrupt TTS
+11. db crate extracts vocabulary from transcript + response, updates word records
 ```
 
 ### Barge-in
@@ -107,42 +110,50 @@ VAD detects speech energy during TTS playback
      ↓
 Tauri command cancels current TTS stream
      ↓
-Fresh audio chunks flow to Omni
+Fresh audio chunks flow to ASR
      ↓
-Omni responds to the interruption naturally
+LLM responds to the interruption naturally
 ```
 
 ---
 
 ## Python Sidecar
 
-The sidecar exposes a single local HTTP server on `localhost:8091` using vLLM-Omni. Rust communicates with it via `reqwest` streaming calls.
+The sidecar is a Python process exposing three local HTTP endpoints on `localhost:8091`. It runs Qwen3-ASR and Qwen3-TTS via `mlx-audio` and the tutor LLM via `mlx-lm`. Model paths are read from `Models.json` at startup. Rust communicates with it via `reqwest` streaming calls.
 
 ### Endpoints used
 
 | Endpoint | Direction | Purpose |
 |---|---|---|
-| `POST /v1/chat/completions` (stream) | Rust → Omni | Send audio chunks, receive text tokens |
-| `POST /v1/audio/speech/stream` (WebSocket) | Rust → TTS | Send text tokens, receive PCM frames |
+| `POST /asr/transcribe` | Rust → ASR | Send 16kHz mono f32 audio clip, receive transcript text |
+| `POST /llm/chat` (stream) | Rust → LLM | Send messages[], receive structured JSON token stream |
+| `POST /tts/speak` (WebSocket) | Rust → TTS | Send text tokens, receive PCM frames |
 
-### Audio format into Omni
+### Audio format into ASR
 
-Raw PCM bytes sent as base64 in the chat message content, 16kHz mono f32, 100ms chunks. The sidecar accumulates and feeds to Omni's block-wise encoder.
+Complete utterance sent as raw PCM bytes (base64), 16kHz mono f32. The VAD determines the utterance boundary in Rust — the sidecar receives a finished clip, not a stream.
 
-### Text format out of Omni
+### Text format out of LLM
 
-Standard OpenAI streaming delta format. The system prompt instructs Omni to structure output as:
+The LLM is instructed to return structured JSON via mlx-lm's `guided_json` parameter:
 
+```json
+{
+  "transcript": "What does momo mean?",
+  "response": "もも (momo) means peach! It's an N4 word...",
+  "milestone": false
+}
 ```
-「ありがとうございます、でも how do I use it?」
-That's a great question! ありがとうございます is used when...
-```
 
-The quoted block is the transcript of what the user said. Everything after is the tutor response. The Rust client splits on the closing 」 to separate transcript from response.
+- `transcript` — what the user said (may contain mixed English/Japanese)
+- `response` — the tutor's reply, streamed token by token to TTS
+- `milestone` — `true` when the tutor considers the exchange closed with positive feedback; triggers context compaction (see Context Management)
+
+Using `guided_json` rather than prompt-engineering a delimiter avoids fragile bracket-splitting, which fails when Japanese text naturally contains 「」 characters.
 
 ### TTS
 
-Qwen3-TTS-12Hz-1.7B-CustomVoice runs alongside Omni. Text tokens from Omni's response pipe directly into TTS via WebSocket as they arrive — sentence boundary buffered. First audio packet latency is ~97ms.
+Qwen3-TTS-12Hz-1.7B-VoiceDesign runs in the same sidecar process. Text tokens from the LLM response pipe directly into TTS via WebSocket as they arrive — sentence boundary buffered. First audio packet latency is ~97ms.
 
 ---
 
@@ -214,7 +225,7 @@ Each word in `srs_schedule` follows a modified SM-2 algorithm:
 
 ### Vocabulary Extraction
 
-After each Omni response, the `db` crate parses the transcript and response text for Japanese vocabulary using a lightweight morphological approach (no external dependency — a curated JLPT word list lookup against known tokens). Each word found is:
+After each LLM response, the `db` crate parses the transcript and response text for Japanese vocabulary using a lightweight morphological approach (no external dependency — a curated JLPT word list lookup against known tokens). Each word found is:
 
 1. Looked up against the JLPT word list
 2. Added to `vocabulary` if new
@@ -223,19 +234,92 @@ After each Omni response, the `db` crate parses the transcript and response text
 
 ---
 
+## Context Management
+
+The LLM's context window fills within ~20–30 turns once vocabulary injection and conversation history accumulate. Rather than truncating arbitrarily, the app compacts at natural lesson milestones.
+
+### Key point: one sidecar process, new conversation context
+
+The Python sidecar runs as a single persistent process with all three models loaded. A "new session" simply means Rust builds a fresh `messages[]` array seeded from the lesson summary and sends it to the same running sidecar. The model weights stay loaded. The swap is a pointer change in Rust — effectively free.
+
+### Milestone detection
+
+When the tutor returns `"milestone": true` in its JSON response, the exchange is considered closed — the student answered correctly and the tutor gave positive feedback. This is the trigger point.
+
+### Compaction flow
+
+The milestone fires during TTS playback of the positive feedback response, giving a free window of ~2–5 seconds:
+
+```
+milestone: true received
+  → TTS begins playing positive feedback audio
+  → [in parallel]:
+       1. flush conversation_turns and SRS updates to SQLite
+       2. ask LLM to produce a structured lesson summary
+          { topics_covered, words_introduced, words_reviewed, continue_from }
+       3. store summary in SQLite (lesson_summaries table)
+       4. build new messages[]: system prompt + student_profile + lesson_summary
+  → TTS finishes playing
+  → swap active messages[] pointer to the new context (atomic, microseconds)
+  → old messages[] dropped
+```
+
+The student never sees a pause. The handoff is invisible.
+
+### Fallback
+
+If the summary generation is not finished before TTS ends (slow hardware, long summary), the session manager continues on the existing context and retries at the next milestone. Context accumulates a little further but nothing breaks.
+
+### Lesson summary schema
+
+```sql
+-- One row per conversation session
+CREATE TABLE sessions (
+    id                INTEGER PRIMARY KEY,
+    started_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_at          DATETIME,
+    lesson_summary_id INTEGER REFERENCES lesson_summaries(id)
+);
+
+-- Each student turn + tutor response
+-- Written after every exchange, not just at milestone — ensures vocabulary
+-- encounters are never lost to a mid-session crash
+CREATE TABLE conversation_turns (
+    id              INTEGER PRIMARY KEY,
+    session_id      INTEGER REFERENCES sessions(id),
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    student_input   TEXT,           -- raw transcript
+    tutor_response  TEXT,           -- tutor response text
+    milestone       BOOLEAN DEFAULT FALSE
+);
+
+-- Generated at each milestone, seeded into the next conversation context
+CREATE TABLE lesson_summaries (
+    id               INTEGER PRIMARY KEY,
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    topics_covered   TEXT,   -- JSON array of grammar points / topics
+    words_introduced TEXT,   -- JSON array of vocabulary_ids
+    words_reviewed   TEXT,   -- JSON array of vocabulary_ids
+    continue_from    TEXT    -- free-text hint for the next context window
+);
+```
+
+---
+
 ## Models
 
 | Model | Size | Role | Runs via |
 |---|---|---|---|
-| Qwen3-Omni-30B-A3B | ~20GB | STT + tutor LLM | vLLM-Omni |
-| Qwen3-TTS-12Hz-1.7B-CustomVoice | ~3.5GB | Text → speech | vLLM-Omni |
-| Whisper (optional, removed) | — | Not used | — |
+| Qwen3-ASR | ~1–2GB | Speech → transcript (handles mid-sentence code-switching) | mlx-audio |
+| Qwen3.6-27B-4bit | ~14GB | Tutor LLM | mlx-lm |
+| Qwen3-TTS-12Hz-1.7B-VoiceDesign | ~2GB | Text → speech | mlx-audio |
+| ~~Whisper~~ (removed) | — | Abandoned: cannot handle mid-sentence language code-switching (e.g. "what does もも mean?") | — |
 
 > All models run locally. No audio or conversation data is sent to any external service.
 
 ### Recommended for M4 Pro 48GB
 
-The full Qwen3-Omni-30B-A3B model is the recommended choice — it fits comfortably at ~20GB leaving ample headroom. The smaller 7B variant is available if RAM is a concern on other hardware.
+All three models load simultaneously at ~18GB total, leaving ~30GB free for the OS, KV cache, and app. Model paths are configured in `Models.json` — swap to a smaller or larger LLM variant by updating that file, no code changes needed.
 
 ---
 
@@ -252,9 +336,11 @@ The full Qwen3-Omni-30B-A3B model is the recommended choice — it fits comforta
 | HTTP client | reqwest (streaming) |
 | Database | SQLite via rusqlite |
 | Async runtime | Tokio |
-| LLM serving | vLLM-Omni (Python sidecar) |
-| STT + Tutor LLM | Qwen3-Omni |
-| TTS | Qwen3-TTS |
+| Model serving | mlx-lm + mlx-audio (Python sidecar) |
+| Model config | `Models.json` (swap models without code changes) |
+| STT | Qwen3-ASR |
+| Tutor LLM | Qwen3.6-27B-4bit |
+| TTS | Qwen3-TTS-12Hz-1.7B-VoiceDesign |
 
 ---
 
@@ -266,7 +352,7 @@ Each step should be independently runnable and testable before moving to the nex
 Mic capture → ringbuf → resampler → 16kHz mono f32 stream. VAD confirms speech detection. Barge-in signal working.
 
 ### Step 2 — Python sidecar
-Set up vLLM-Omni serving Qwen3-Omni and Qwen3-TTS. Verify with curl that audio in → text out works. Verify TTS WebSocket streams PCM.
+Set up the sidecar process loading models from `Models.json`. Verify ASR with a mixed English/Japanese clip ("what does もも mean?"). Verify LLM chat endpoint returns `{ transcript, response, milestone }` JSON. Verify TTS WebSocket streams PCM.
 
 ### Step 3 — tutor crate
 Rust HTTP client streams audio chunks to sidecar, receives streaming text. Parse transcript vs response from output. Stream text tokens to TTS endpoint, receive PCM back.
@@ -284,10 +370,13 @@ Waveform indicator (VAD driven). Live transcript display. Tutor response streami
 SQLite schema. Vocabulary extraction from transcript. JLPT lookup. SRS scheduling. Learner profile.
 
 ### Step 8 — Dynamic system prompt
-Build Omni system prompt from db state: learner level, words due for review, boundary words to introduce. Tune conversation to JLPT level.
+Build LLM system prompt from db state: learner level, words due for review, boundary words to introduce. Tune conversation to JLPT level.
 
-### Step 9 — Polish
-Barge-in UX tuning. VAD sensitivity per learner. Silence threshold configuration. Voice selection for TTS. Conversation history management.
+### Step 9 — Context compaction
+Implement the session manager: token counter, milestone detection from LLM JSON, lesson summary generation, new `messages[]` context assembly, atomic pointer swap. Add `sessions`, `conversation_turns`, and `lesson_summaries` tables to db crate. Flush turns and SRS updates at each milestone.
+
+### Step 10 — Polish
+Barge-in UX tuning. VAD silence threshold configuration. Voice selection for TTS.
 
 ---
 
@@ -330,12 +419,12 @@ com.apple.security.device.audio-input
 # Python environment for sidecar
 python3 -m venv .venv
 source .venv/bin/activate
-pip install vllm-omni
+pip install mlx-lm mlx-audio
 
-# Download models (automatic on first vLLM-Omni run)
-# Or manually:
-# Qwen3-Omni: ~20GB from HuggingFace
-# Qwen3-TTS:  ~3.5GB from HuggingFace
+# Models are loaded from Models.json — download to ~/llm_models/ from HuggingFace
+# Qwen3-ASR:            ~1–2GB
+# Qwen3.6-27B-4bit:     ~14GB
+# Qwen3-TTS-1.7B:       ~2GB
 ```
 
 ---
@@ -351,8 +440,8 @@ pip install vllm-omni
 
 ## Future Considerations
 
-- **Handwriting input** — Qwen3-Omni accepts images, so the user could draw kanji on a tablet and ask about it
-- **Pitch accent feedback** — Omni can detect pronunciation patterns from raw audio
+- **Pitch accent feedback** — raw audio from the ASR step can be analysed for pronunciation patterns before transcription
+- **Handwriting input** — swap the LLM for a vision-capable Qwen3 variant; user draws kanji, model explains it
 - **Reading mode** — paste Japanese text, tutor reads it aloud and explains
 - **Export** — Anki deck export from the vocabulary database
 - **Multiple learners** — learner_profile table already supports this with a user_id
