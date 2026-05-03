@@ -17,6 +17,14 @@ export default function useEvents() {
 
         async function register() {
             const fns = await Promise.all([
+                listen<{ state: string; message: string | null }>('sidecar_status', (e) => {
+                    console.log("[backend] sidecar_status:", e.payload.state);
+                    if (e.payload.state === 'ready') {
+                        setSessionStatus('idle');
+                    } else if (e.payload.state === 'error') {
+                        addMessage('system', `Sidecar error: ${e.payload.message ?? 'unknown'}`);
+                    }
+                }),
                 listen<{ text: string }>('transcript', (e) => {
                     console.log("[backend] transcript:", e);
                     addMessage('user', e.payload.text)

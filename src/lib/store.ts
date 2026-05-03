@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type SessionStatus = 'idle' | 'starting' | 'ready';
+export type SessionStatus = 'warming_up' | 'idle' | 'starting' | 'ready';
 
 export type Message = {
     id: string;
@@ -20,7 +20,7 @@ type AppState = {
 };
 
 export const useAppStore = create<AppState>((set) => ({
-    sessionStatus: 'idle',
+    sessionStatus: 'warming_up',
     messages: [],
     streamingText: '',
 

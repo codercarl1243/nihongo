@@ -23,10 +23,15 @@ struct AppState {
     session: Mutex<Option<TutorSession>>,
 }
 
+// Compile-time path to the sidecar directory; resolves relative to src-tauri/.
+const SIDECAR_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar");
+
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Serialize)]
+struct SidecarStatusEvent { state: String, message: Option<String> }
 #[derive(Clone, Serialize)]
 struct TranscriptEvent    { text: String }
 #[derive(Clone, Serialize)]
@@ -44,7 +49,7 @@ struct ErrorEvent         { message: String }
 async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     if !state.llm.is_ready().await {
         return Err(
-            "Sidecar is not running. Start it first with ./test-backend.sh".to_string()
+            "Sidecar is still loading — please wait for models to initialise.".to_string()
         );
     }
 
@@ -302,6 +307,63 @@ fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
 }
 
 // ---------------------------------------------------------------------------
+// Sidecar lifecycle
+// ---------------------------------------------------------------------------
+
+async fn sidecar_is_up() -> bool {
+    reqwest::get("http://127.0.0.1:8091/health")
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
+/// Spawned at startup. Starts the sidecar if not already running, then polls
+/// until ready. Emits `sidecar_status` events for the frontend loading state.
+/// The sidecar is intentionally left running when the app exits so models
+/// stay warm in GPU memory between sessions.
+async fn start_sidecar_background(app: AppHandle) {
+    let emit = |state: &str, message: Option<String>| {
+        let _ = app.emit("sidecar_status", SidecarStatusEvent {
+            state: state.to_string(),
+            message,
+        });
+    };
+
+    emit("warming_up", None);
+
+    // Already running — nothing to do.
+    if sidecar_is_up().await {
+        emit("ready", None);
+        return;
+    }
+
+    // Spawn start.sh detached. stdout/stderr inherit so log output stays
+    // visible in the terminal where the app was launched.
+    if let Err(e) = std::process::Command::new("bash")
+        .arg("start.sh")
+        .current_dir(SIDECAR_DIR)
+        .spawn()
+    {
+        emit("error", Some(format!("Failed to launch sidecar: {e}")));
+        return;
+    }
+
+    // Poll every 2 s for up to 2 minutes.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+    loop {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        if sidecar_is_up().await {
+            emit("ready", None);
+            return;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            emit("error", Some("Sidecar did not become ready within 2 minutes".into()));
+            return;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -317,6 +379,11 @@ pub fn run() {
             llm:     SidecarClient::new(),
             db:      Mutex::new(db),
             session: Mutex::new(None),
+        })
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(start_sidecar_background(handle));
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             start_session,

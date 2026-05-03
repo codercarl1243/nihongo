@@ -10,6 +10,10 @@ type Props = {
 };
 
 export default function SessionButton({ status, onStart, onStop }: Props) {
+    if (status === 'warming_up') {
+        return <Button isLoading>Loading models…</Button>;
+    }
+
     if (status === 'idle') {
         return <Button onClick={onStart}>Start Session</Button>;
     }
