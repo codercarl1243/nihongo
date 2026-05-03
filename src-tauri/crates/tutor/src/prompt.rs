@@ -1,35 +1,27 @@
-use db::{LearnerProfile, LessonSummary};
+use db::{LearnerProfile, LessonSummary, SessionContext};
 use llm::ChatMessage;
 
 const SYSTEM_BASE: &str = "\
-You are a friendly Japanese language tutor. Your student is a native English speaker.
+You are a Japanese language tutor in a voice conversation. Keep every reply SHORT \
+— one or two sentences maximum, no exceptions.
 
 Rules:
-- Always respond in the student's current JLPT level or below.
-- When the student asks about a Japanese word or phrase, explain it clearly in English, \
-  then use it naturally in your Japanese response.
-- Keep responses concise — one teaching point per turn.
-- Always end your response with natural spoken Japanese the student can repeat.
+- Respond naturally using vocabulary at or below the student's JLPT level and words \
+  they have already encountered — but do not explain them unless asked.
+- Never volunteer definitions, grammar notes, or new vocabulary the student did not \
+  ask about.
+- Greetings get a one-sentence greeting back, nothing more.
+- Only correct or explicitly teach when the student makes an attempt or asks a question.
+- When the conversation reaches a natural pause or teaching moment, end your response \
+  with a short prompt inviting the student to try something in Japanese. Use your \
+  judgement — casual exchanges like greetings do not need a prompt.";
 
-IMPORTANT — you must respond with a JSON object only, no other text:
-{
-  \"transcript\": \"<exactly what the student said>\",
-  \"response\": \"<your tutor response>\",
-  \"milestone\": <true if the student answered correctly and you gave positive feedback, otherwise false>
-}";
-
-pub fn build_system_prompt_pub(
-    profile: &LearnerProfile,
-    last_summary: Option<&LessonSummary>,
-) -> ChatMessage {
-    build_system_prompt(profile, last_summary)
+pub fn build_system_prompt_pub(ctx: &SessionContext) -> ChatMessage {
+    build_system_prompt(ctx)
 }
 
-pub fn build_system_prompt(
-    profile: &LearnerProfile,
-    last_summary: Option<&LessonSummary>,
-) -> ChatMessage {
-    let level_desc = match profile.current_level {
+pub fn build_system_prompt(ctx: &SessionContext) -> ChatMessage {
+    let level_desc = match ctx.profile.current_level {
         5 => "N5 (absolute beginner — hiragana, katakana, ~100 basic words)",
         4 => "N4 (elementary — ~300 words, basic grammar)",
         3 => "N3 (intermediate — ~650 words, complex sentences)",
@@ -40,21 +32,63 @@ pub fn build_system_prompt(
 
     let mut prompt = format!(
         "{}\n\nStudent level: {}\nTotal words encountered: {}",
-        SYSTEM_BASE, level_desc, profile.total_words
+        SYSTEM_BASE, level_desc, ctx.profile.total_words
     );
 
-    if let Some(summary) = last_summary {
-        prompt.push_str("\n\nPrevious lesson summary:\n");
-        if !summary.topics_covered.is_empty() {
-            prompt.push_str(&format!(
-                "Topics covered: {}\n",
-                summary.topics_covered.join(", ")
-            ));
+    if let Some(ref active) = ctx.current_topic {
+        prompt.push_str(&format!(
+            "\n\nCurrent topic: {} — {}",
+            active.topic.name, active.topic.description
+        ));
+
+        // First 5 words to introduce in this topic
+        let to_introduce: Vec<String> = active.pending.iter().take(5)
+            .filter_map(|v| v.meaning.as_ref().map(|m| format!("{} ({})", v.word, m)))
+            .collect();
+        if !to_introduce.is_empty() {
+            prompt.push_str(&format!("\nWords to introduce: {}", to_introduce.join(", ")));
         }
-        if !summary.continue_from.is_empty() {
-            prompt.push_str(&format!("Continue from: {}\n", summary.continue_from));
+
+        // Words the student has already seen in this topic
+        if !active.introduced.is_empty() {
+            let seen: Vec<&str> = active.introduced.iter().take(10)
+                .map(|v| v.word.as_str())
+                .collect();
+            prompt.push_str(&format!("\nWords already seen in topic: {}", seen.join(", ")));
         }
     }
 
+    // SRS words due for review today
+    if !ctx.srs_due.is_empty() {
+        let due: Vec<&str> = ctx.srs_due.iter().map(|v| v.word.as_str()).collect();
+        prompt.push_str(&format!("\nWords due for review today: {}", due.join(", ")));
+    }
+
+    // Previous lesson notes
+    if let Some(ref notes) = ctx.last_notes {
+        prompt.push_str("\n\nPrevious lesson notes:\n");
+        prompt.push_str(notes);
+    }
+
     ChatMessage::system(prompt)
+}
+
+// ---------------------------------------------------------------------------
+// Legacy helper — kept for callers that still have separate profile + summary.
+// Remove once all call sites move to SessionContext.
+// ---------------------------------------------------------------------------
+
+pub fn build_system_prompt_from_parts(
+    profile: &LearnerProfile,
+    last_summary: Option<&LessonSummary>,
+) -> ChatMessage {
+    let ctx = SessionContext {
+        profile: profile.clone(),
+        current_topic: None,
+        srs_due: vec![],
+        last_notes: last_summary
+            .filter(|s| !s.notes.is_empty())
+            .map(|s| s.notes.clone()),
+    };
+    build_system_prompt(&ctx)
 }

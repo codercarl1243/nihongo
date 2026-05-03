@@ -1,4 +1,4 @@
-use db::{Db, LessonSummary};
+use db::{Db, LessonSummary, TopicStatus};
 use llm::{ChatMessage, TutorResponse};
 use anyhow::Result;
 
@@ -9,33 +9,36 @@ const MAX_CONTEXT_TOKENS: usize = 4096;
 const COMPACT_THRESHOLD: usize = (MAX_CONTEXT_TOKENS as f64 * 0.8) as usize;
 
 pub struct TutorSession {
-    messages: Vec<ChatMessage>,
+    messages:       Vec<ChatMessage>,
     token_estimate: usize,
-    session_id: i64,
+    session_id:     i64,
 }
 
 impl TutorSession {
     pub fn new(db: &Db) -> Result<Self> {
-        let profile = db.learner_profile()?;
-        let last_summary = db.latest_lesson_summary()?;
+        let ctx = db.session_context()?;
+
+        // Ensure the active topic is recorded as in_progress.
+        if let Some(ref active) = ctx.current_topic {
+            db.mark_topic_status(active.topic.id, TopicStatus::InProgress)?;
+        }
+
         let session_id = db.start_session()?;
-        let system_msg = build_system_prompt(&profile, last_summary.as_ref());
-        let estimate = token_estimate(&system_msg.content);
+        let system_msg = build_system_prompt(&ctx);
+        let estimate   = token_estimate(&system_msg.content);
         Ok(Self { messages: vec![system_msg], token_estimate: estimate, session_id })
     }
 
     pub fn session_id(&self) -> i64 { self.session_id }
 
-    /// Snapshot of the full message history for streaming against the LLM.
     pub fn current_messages(&self) -> &[ChatMessage] { &self.messages }
 
-    /// Append the student's transcript as a user message.
     pub fn push_user(&mut self, transcript: &str) {
         self.messages.push(ChatMessage::user(transcript));
         self.token_estimate += token_estimate(transcript);
     }
 
-    /// Synchronously persist the completed turn and append the assistant message.
+    /// Persist the completed turn and append the assistant message.
     /// Returns `true` when the context has crossed the compaction threshold.
     pub fn record_turn_sync(
         &mut self,
@@ -57,7 +60,6 @@ impl TutorSession {
     }
 
     /// Build a summary-request message list from the current history.
-    /// Called by lib.rs before streaming the summary.
     pub fn summary_request_messages(&self) -> Vec<ChatMessage> {
         let history: String = self.messages
             .iter()
@@ -70,14 +72,15 @@ impl TutorSession {
             ChatMessage::system("You are a concise session summariser."),
             ChatMessage::user(format!(
                 "Summarise this tutoring session in JSON:\n\
-                 {{\"topics_covered\": [...], \"words_introduced\": [], \"words_reviewed\": [], \"continue_from\": \"...\"}}\n\n\
+                 {{\"notes\": \"...\"}}\n\n\
+                 The notes field should describe what was practised, any errors made, \
+                 and what to continue next session. Be specific about vocabulary and topics.\n\n\
                  Session:\n{}",
                 history
             )),
         ]
     }
 
-    /// Reset the context window with a new system prompt after compaction.
     pub fn reset_context(&mut self, system_msg: ChatMessage) {
         self.token_estimate = token_estimate(&system_msg.content);
         self.messages = vec![system_msg];
@@ -85,40 +88,32 @@ impl TutorSession {
 }
 
 // ---------------------------------------------------------------------------
-// Parsing helpers — pub so lib.rs can use them
+// Parsing helpers
 // ---------------------------------------------------------------------------
 
 pub fn parse_response_pub(raw: &str) -> TutorResponse {
-    let trimmed = raw.trim();
-    if let (Some(s), Some(e)) = (trimmed.find('{'), trimmed.rfind('}')) {
-        if let Ok(r) = serde_json::from_str::<TutorResponse>(&trimmed[s..=e]) {
-            return r;
-        }
-    }
-    TutorResponse { transcript: String::new(), response: raw.to_string(), milestone: false }
+    // TODO: detect milestones (student answered correctly) to trigger context compaction
+    TutorResponse { transcript: String::new(), response: raw.trim().to_string(), milestone: false }
 }
 
 pub fn parse_summary_pub(raw: &str) -> LessonSummary {
     #[derive(serde::Deserialize)]
-    struct Raw { topics_covered: Vec<String>, continue_from: String }
+    struct Raw { notes: String }
     let trimmed = raw.trim();
     if let (Some(s), Some(e)) = (trimmed.find('{'), trimmed.rfind('}')) {
         if let Ok(r) = serde_json::from_str::<Raw>(&trimmed[s..=e]) {
             return LessonSummary {
-                id: 0,
-                topics_covered: r.topics_covered,
-                words_introduced: vec![],
-                words_reviewed: vec![],
-                continue_from: r.continue_from,
+                id: 0, session_id: None, notes: r.notes,
+                topics: vec![], vocabulary: vec![],
             };
         }
     }
     LessonSummary {
         id: 0,
-        topics_covered: vec![],
-        words_introduced: vec![],
-        words_reviewed: vec![],
-        continue_from: raw.chars().take(200).collect(),
+        session_id: None,
+        notes: raw.chars().take(500).collect(),
+        topics: vec![],
+        vocabulary: vec![],
     }
 }
 

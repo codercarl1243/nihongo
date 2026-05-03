@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use audio_engine::{AudioManager, AudioPlayer, EngineConfig};
 use chrono::Timelike as _;
@@ -28,8 +29,6 @@ struct AppState {
 
 #[derive(Clone, Serialize)]
 struct TranscriptEvent    { text: String }
-#[derive(Clone, Serialize)]
-struct ResponseTokenEvent { token: String }
 #[derive(Clone, Serialize)]
 struct ResponseDoneEvent  { full_response: String, milestone: bool }
 #[derive(Clone, Serialize)]
@@ -75,13 +74,9 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
 
     tokio::spawn(async move {
         while let Some(audio_chunk) = turn_stream.next().await {
-            let app2 = app.clone();
-            let llm2 = llm.clone();
-            tokio::spawn(async move {
-                if let Err(e) = handle_turn(audio_chunk, &app2, &llm2).await {
-                    let _ = app2.emit("error", ErrorEvent { message: e.to_string() });
-                }
-            });
+            if let Err(e) = handle_turn(audio_chunk, &app, &llm).await {
+                let _ = app.emit("error", ErrorEvent { message: e.to_string() });
+            }
         }
     });
 
@@ -115,71 +110,35 @@ fn barge_in(state: State<'_, AppState>) {
 // Greeting / warm-up
 // ---------------------------------------------------------------------------
 
-fn build_greeting() -> String {
+// TODO: utilize username from learner profile instead of hardcoded name
+fn build_greeting() -> &'static str {
     let hour = chrono::Local::now().hour();
-    let time_of_day = match hour {
-        5..=11  => "morning",
-        12..=16 => "afternoon",
-        17..=20 => "evening",
-        _       => "evening",
-    };
-    format!(
-        "Good {time_of_day}, my name is Carl. \
-         Please let me know when you are ready to start our Japanese lesson."
-    )
+    match hour {
+        5..=11  => "Good morning, Carl!",
+        12..=16 => "Good afternoon, Carl!",
+        17..=20 => "Good evening, Carl!",
+        _       => "Good evening, Carl!",
+    }
 }
 
-/// Sends the time-of-day greeting through the full LLM→TTS→play pipeline.
-/// Emits `session_ready` once TTS audio has been queued for playback.
+/// Speaks a hardcoded greeting via TTS directly — no LLM involved.
+/// Emits `session_ready` once audio has been queued for playback.
 async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     let greeting = build_greeting();
 
-    // Push greeting as the opening user turn and snapshot the message history.
-    let messages: Vec<ChatMessage> = {
-        let mut sg = state.session.lock().unwrap();
-        let s = sg.as_mut().ok_or_else(|| anyhow::anyhow!("no active session"))?;
-        s.push_user(&greeting);
-        s.current_messages().to_vec()
-    };
+    state.audio.lock().unwrap().mute();
+    state.player.lock().unwrap().resume();
+    let wav = state.llm.speak(greeting).await?;
+    let pcm = wav_to_f32(&wav)?;
+    state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
+    wait_for_playback(&state, &pcm).await;
 
-    // Stream LLM response, forwarding tokens to the frontend.
-    let llm = state.llm.clone();
-    let mut full_text = String::new();
-    {
-        let mut stream = llm.chat_stream(&messages).await?;
-        while let Some(chunk) = stream.next().await {
-            let token = chunk?;
-            if !token.is_empty() {
-                full_text.push_str(&token);
-                app.emit("response_token", ResponseTokenEvent { token })?;
-            }
-        }
-    }
-
-    let tutor_resp = parse_response_pub(&full_text);
     app.emit("response_done", ResponseDoneEvent {
-        full_response: tutor_resp.response.clone(),
-        milestone: tutor_resp.milestone,
+        full_response: greeting.to_string(),
+        milestone: false,
     })?;
-
-    // Persist turn.
-    {
-        let mut sg = state.session.lock().unwrap();
-        let s = sg.as_mut().ok_or_else(|| anyhow::anyhow!("no active session"))?;
-        let db = state.db.lock().unwrap();
-        s.record_turn_sync(&greeting, &tutor_resp, &db)?;
-    }
-
-    // TTS playback.
-    if !tutor_resp.response.is_empty() {
-        state.player.lock().unwrap().resume();
-        let wav = llm.speak(&tutor_resp.response).await?;
-        let pcm = wav_to_f32(&wav)?;
-        state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
-    }
-
-    app.emit("session_ready", SessionReadyEvent { greeting: tutor_resp.response.clone() })?;
+    app.emit("session_ready", SessionReadyEvent { greeting: greeting.to_string() })?;
 
     Ok(())
 }
@@ -212,16 +171,12 @@ async fn handle_turn(
         s.current_messages().to_vec()
     };
 
-    // ── 3. Stream LLM tokens ────────────────────────────────────────────────
+    // ── 3. Stream LLM response — accumulate full text, no per-token events ────
     let mut full_text = String::new();
     {
         let mut stream = llm.chat_stream(&messages).await?;
         while let Some(chunk) = stream.next().await {
-            let token = chunk?;
-            if !token.is_empty() {
-                full_text.push_str(&token);
-                app.emit("response_token", ResponseTokenEvent { token })?;
-            }
+            full_text.push_str(&chunk?);
         }
     }
 
@@ -239,20 +194,54 @@ async fn handle_turn(
         s.record_turn_sync(&transcript, &tutor_resp, &db)?
     };
 
+    // ── 4b. Vocabulary introduction — best-effort, never breaks the pipeline ──
+    {
+        let db = state.db.lock().unwrap();
+        if let Ok(ctx) = db.session_context() {
+            if let Some(ref active) = ctx.current_topic {
+                if let Ok(ids) = db.find_vocab_in_text(&transcript, active.topic.id) {
+                    for vid in ids {
+                        let _ = db.introduce_word(vid);
+                    }
+                }
+            }
+        }
+    }
+
     // ── 5. Context compaction (if milestone + threshold reached) ────────────
     if needs_compact {
         compact_context(app, llm).await?;
     }
 
-    // ── 6. TTS playback ─────────────────────────────────────────────────────
+    // ── 6. TTS playback — mute capture to prevent echo ──────────────────────
     if !tutor_resp.response.is_empty() {
+        state.audio.lock().unwrap().mute();
         state.player.lock().unwrap().resume();
         let wav = llm.speak(&tutor_resp.response).await?;
         let pcm = wav_to_f32(&wav)?;
         state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
+        wait_for_playback(&state, &pcm).await;
     }
 
     Ok(())
+}
+
+/// Sleeps for the duration of the PCM audio at 24kHz, polling every 50ms for
+/// a barge-in (player stopped). Unmutes capture when done or barged in.
+async fn wait_for_playback(state: &AppState, pcm: &[f32]) {
+    let total = Duration::from_secs_f64(pcm.len() as f64 / 24_000.0);
+    let step  = Duration::from_millis(50);
+    let mut elapsed = Duration::ZERO;
+
+    while elapsed < total {
+        tokio::time::sleep(step).await;
+        elapsed += step;
+        if state.player.lock().unwrap().is_stopped() {
+            break;
+        }
+    }
+
+    state.audio.lock().unwrap().unmute();
 }
 
 /// Build a summary, save it, then reset the session context.
@@ -278,13 +267,12 @@ async fn compact_context(app: &AppHandle, llm: &SidecarClient) -> anyhow::Result
 
     let summary = parse_summary_pub(&raw_summary);
 
-    // Save summary and build new system prompt (sync, locks dropped before next await)
+    // Save summary, then rebuild context from fresh session_context() snapshot.
     let new_system: ChatMessage = {
         let db = state.db.lock().unwrap();
         db.save_lesson_summary(&summary)?;
-        let profile = db.learner_profile()?;
-        let saved_summary = db.latest_lesson_summary()?;
-        tutor::build_system_prompt_pub(&profile, saved_summary.as_ref())
+        let ctx = db.session_context()?;
+        tutor::build_system_prompt_pub(&ctx)
     };
 
     // Reset the session context
