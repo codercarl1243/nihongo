@@ -16,6 +16,20 @@ Rules:
   with a short prompt inviting the student to try something in Japanese. Use your \
   judgement — casual exchanges like greetings do not need a prompt.";
 
+const INSTRUCTION_LANGUAGE_N5_N4: &str =
+    "\n\nInstruction language: The student is a beginner and understands little or no \
+     Japanese. Conduct the lesson in English. When you introduce a Japanese word or \
+     phrase, say it in Japanese then immediately give the English meaning in parentheses. \
+     Never reply to an English question with a Japanese-only sentence.";
+
+const INSTRUCTION_LANGUAGE_N3: &str =
+    "\n\nInstruction language: Mix English and Japanese. Use simple Japanese sentences \
+     the student knows, but fall back to English for explanations. Always gloss new words.";
+
+const INSTRUCTION_LANGUAGE_N2_N1: &str =
+    "\n\nInstruction language: Conduct the lesson in Japanese. Use English only when \
+     explicitly asked or when a grammar point cannot be expressed otherwise.";
+
 pub fn build_system_prompt_pub(ctx: &SessionContext) -> ChatMessage {
     build_system_prompt(ctx)
 }
@@ -30,9 +44,15 @@ pub fn build_system_prompt(ctx: &SessionContext) -> ChatMessage {
         _ => "N5 (beginner)",
     };
 
+    let instruction_lang = match ctx.profile.current_level {
+        1 | 2 => INSTRUCTION_LANGUAGE_N2_N1,
+        3     => INSTRUCTION_LANGUAGE_N3,
+        _     => INSTRUCTION_LANGUAGE_N5_N4,
+    };
+
     let mut prompt = format!(
-        "{}\n\nStudent level: {}\nTotal words encountered: {}",
-        SYSTEM_BASE, level_desc, ctx.profile.total_words
+        "{}{}\n\nStudent level: {}\nTotal words encountered: {}",
+        SYSTEM_BASE, instruction_lang, level_desc, ctx.profile.total_words
     );
 
     if let Some(ref active) = ctx.current_topic {

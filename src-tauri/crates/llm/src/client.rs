@@ -197,7 +197,6 @@ impl Default for SidecarClient {
 // ---------------------------------------------------------------------------
 
 fn base64_encode(data: &[u8]) -> String {
-    use std::io::Write;
     // Use the standard base64 alphabet without padding differences
     const TABLE: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
