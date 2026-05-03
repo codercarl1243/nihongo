@@ -53,9 +53,23 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
         );
     }
 
+    // Silence threshold scales with proficiency: beginners need more time to
+    // retrieve words; near-native speakers can pace like natural conversation.
+    let silence_ms = {
+        let db = state.db.lock().unwrap();
+        match db.session_context().map(|c| c.profile.current_level).unwrap_or(5) {
+            1 | 2 => 700,  // N1/N2 — near-native pacing
+            3     => 900,  // N3 — intermediate
+            _     => 1200, // N4/N5 — beginner
+        }
+    };
+
     let streams = state.audio
         .lock().unwrap()
-        .start(EngineConfig::default())
+        .start(EngineConfig {
+            silence_threshold: Duration::from_millis(silence_ms),
+            ..EngineConfig::default()
+        })
         .map_err(|e| e.to_string())?;
 
     state.player.lock().unwrap().start().map_err(|e| e.to_string())?;
@@ -137,7 +151,8 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
     let wav = state.llm.speak(greeting).await?;
     let pcm = wav_to_f32(&wav)?;
     state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
-    wait_for_playback(&state, &pcm).await;
+    let duration = Duration::from_secs_f64(pcm.len() as f64 / 24_000.0);
+    wait_for_playback(&state, duration).await;
 
     app.emit("response_done", ResponseDoneEvent {
         full_response: greeting.to_string(),
@@ -161,7 +176,7 @@ async fn handle_turn(
     let state = app.state::<AppState>();
 
     // ── 1. ASR ──────────────────────────────────────────────────────────────
-    let transcript = llm.transcribe(&audio).await?;
+    let transcript = llm.transcribe(&normalize_peak(&audio)).await?;
     if transcript.trim().is_empty() {
         return Ok(());
     }
@@ -176,15 +191,46 @@ async fn handle_turn(
         s.current_messages().to_vec()
     };
 
-    // ── 3. Stream LLM response — accumulate full text, no per-token events ────
-    let mut full_text = String::new();
-    {
-        let mut stream = llm.chat_stream(&messages).await?;
+    // ── 3+6. Pipeline: LLM stream → sentence channel → TTS → play ─────────
+    // Sentences are sent over a buffered channel so TTS for sentence N can
+    // begin while the LLM is still generating sentence N+1.
+    let (sentence_tx, mut sentence_rx) = tokio::sync::mpsc::channel::<String>(8);
+
+    let llm_clone  = llm.clone();
+    let msgs_clone = messages.clone();
+    let llm_task   = tokio::spawn(async move {
+        let mut buf  = String::new();
+        let mut full = String::new();
+        let mut stream = llm_clone.chat_stream(&msgs_clone).await?;
         while let Some(chunk) = stream.next().await {
-            full_text.push_str(&chunk?);
+            let tok = chunk?;
+            full.push_str(&tok);
+            buf.push_str(&tok);
+            while let Some(sent) = flush_sentence(&mut buf) {
+                sentence_tx.send(sent).await.ok();
+            }
         }
+        // flush remainder (no terminal punctuation)
+        let rem = buf.trim().to_string();
+        if !rem.is_empty() { sentence_tx.send(rem).await.ok(); }
+        Ok::<String, anyhow::Error>(full)
+    });
+
+    let mut muted         = false;
+    let mut total_samples = 0usize;
+    while let Some(sentence) = sentence_rx.recv().await {
+        if !muted {
+            state.audio.lock().unwrap().mute();
+            state.player.lock().unwrap().resume();
+            muted = true;
+        }
+        let wav = llm.speak(&sentence).await?;
+        let pcm = wav_to_f32(&wav)?;
+        total_samples += pcm.len();
+        state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
     }
 
+    let full_text  = llm_task.await??;
     let tutor_resp = parse_response_pub(&full_text);
     app.emit("response_done", ResponseDoneEvent {
         full_response: tutor_resp.response.clone(),
@@ -218,27 +264,24 @@ async fn handle_turn(
         compact_context(app, llm).await?;
     }
 
-    // ── 6. TTS playback — mute capture to prevent echo ──────────────────────
-    if !tutor_resp.response.is_empty() {
-        state.audio.lock().unwrap().mute();
-        state.player.lock().unwrap().resume();
-        let wav = llm.speak(&tutor_resp.response).await?;
-        let pcm = wav_to_f32(&wav)?;
-        state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
-        wait_for_playback(&state, &pcm).await;
+    // ── Wait for all queued audio / unmute ───────────────────────────────────
+    if total_samples > 0 {
+        let duration = Duration::from_secs_f64(total_samples as f64 / 24_000.0);
+        wait_for_playback(&state, duration).await;
+    } else {
+        state.audio.lock().unwrap().unmute();
     }
 
     Ok(())
 }
 
-/// Sleeps for the duration of the PCM audio at 24kHz, polling every 50ms for
-/// a barge-in (player stopped). Unmutes capture when done or barged in.
-async fn wait_for_playback(state: &AppState, pcm: &[f32]) {
-    let total = Duration::from_secs_f64(pcm.len() as f64 / 24_000.0);
-    let step  = Duration::from_millis(50);
+/// Sleeps for `duration`, polling every 50ms for a barge-in (player stopped).
+/// Unmutes capture when done or barged in.
+async fn wait_for_playback(state: &AppState, duration: Duration) {
+    let step        = Duration::from_millis(50);
     let mut elapsed = Duration::ZERO;
 
-    while elapsed < total {
+    while elapsed < duration {
         tokio::time::sleep(step).await;
         elapsed += step;
         if state.player.lock().unwrap().is_stopped() {
@@ -304,6 +347,29 @@ fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
         .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / i16::MAX as f32)
         .collect();
     Ok(samples)
+}
+
+// ---------------------------------------------------------------------------
+// Audio / text helpers
+// ---------------------------------------------------------------------------
+
+/// Extract the next complete sentence from `buf` (up to 。！？!?), consuming it.
+fn flush_sentence(buf: &mut String) -> Option<String> {
+    const ENDS: &[char] = &['。', '！', '？', '!', '?'];
+    let pos = buf.find(|c: char| ENDS.contains(&c))?;
+    let end = pos + buf[pos..].chars().next().unwrap().len_utf8();
+    let sentence = buf[..end].trim().to_string();
+    *buf = buf[end..].trim_start().to_string();
+    if sentence.is_empty() { None } else { Some(sentence) }
+}
+
+/// Scale audio so its peak is 0.9, leaving silence untouched.
+/// Compensates for low-gain microphones (e.g. earbuds).
+fn normalize_peak(audio: &[f32]) -> Vec<f32> {
+    let peak = audio.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    if peak < 0.001 { return audio.to_vec(); }
+    let scale = 0.9 / peak;
+    audio.iter().map(|s| (s * scale).clamp(-1.0, 1.0)).collect()
 }
 
 // ---------------------------------------------------------------------------

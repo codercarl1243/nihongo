@@ -43,6 +43,7 @@ async def startup():
 
 class TranscribeRequest(BaseModel):
     audio_b64: str          # base64-encoded little-endian f32 PCM at 16kHz mono
+    language: str = "ja"   # force language; prevents multi-language confusion on noisy input
 
 
 class TranscribeResponse(BaseModel):
@@ -73,17 +74,19 @@ async def transcribe(req: TranscribeRequest):
     raw = base64.b64decode(req.audio_b64)
     audio = np.frombuffer(raw, dtype=np.float32).copy()
     loop = asyncio.get_event_loop()
-    transcript = await loop.run_in_executor(_ml_executor, _run_asr, audio)
+    transcript = await loop.run_in_executor(_ml_executor, _run_asr, audio, req.language)
     return TranscribeResponse(transcript=transcript.strip())
 
 
-def _run_asr(audio: np.ndarray) -> str:
+def _run_asr(audio: np.ndarray, language: str) -> str:
     """Blocking ASR inference — runs on _ml_executor so MLX streams match."""
     import mlx.core as mx
     from mlx_audio.stt.generate import generate_transcription
     asr_model = _models.get_asr()
     audio_mx = mx.array(audio)
-    segments = generate_transcription(model=asr_model, audio=audio_mx, task="transcribe")
+    segments = generate_transcription(
+        model=asr_model, audio=audio_mx, task="transcribe", language=language
+    )
     if segments is None:
         return ""
     if isinstance(segments, list):
