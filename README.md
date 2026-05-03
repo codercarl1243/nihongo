@@ -84,12 +84,13 @@ src-tauri/
     │       ├── session.rs      ← TutorSession: turn history, token counter, compaction trigger
     │       └── types.rs        ← Message, Role, TutorResponse
     │
-    └── db/                     ← SQLite: sessions, turns, vocabulary, SRS, learner profile
+    └── db/                     ← SQLite: curriculum, sessions, vocabulary, kanji, SRS, profile
         ├── Cargo.toml
         └── src/
             ├── lib.rs
-            ├── store.rs        ← Db struct: all read/write operations
-            └── types.rs        ← LearnerProfile, LessonSummary, VocabEntry
+            ├── store.rs        ← Db struct: migration, all read/write operations
+            ├── types.rs        ← LearnerProfile, VocabEntry, KanjiEntry, Topic, LessonSummary …
+            └── seed.rs         ← N5_SEED_SQL: 14 topics, 130 vocab, 36 kanji, 4 lesson plans
 
 sidecar/                        ← Python process, serves all three model endpoints
 ├── server.py                   ← FastAPI: /asr/transcribe, /llm/chat (SSE), /tts/speak, /health
@@ -109,13 +110,13 @@ sidecar/                        ← Python process, serves all three model endpo
 2. Resampler converts to 16kHz mono f32
 3. VAD detects speech start → audio accumulates in utterance buffer
 4. VAD detects trailing silence → utterance complete, send buffered clip to ASR
-5. ASR returns transcript text → passed to LLM with conversation context
-6. LLM returns structured JSON { transcript, response, milestone }
-7. transcript streamed to React (live display)
-8. response tokens stream to Qwen3-TTS
-9. TTS streams PCM audio back → cpal output stream → speaker
-10. VAD monitors mic during TTS playback → barge-in detected → interrupt TTS
-11. db crate extracts vocabulary from transcript + response, updates word records
+5. ASR returns transcript text → emitted to React (live display)
+6. LLM receives full message history → streams plain-text reply
+7. Accumulated reply emitted to React via response_done event
+8. db scans transcript for topic vocabulary → calls introduce_word for new words
+9. TTS receives complete reply text → returns WAV bytes
+10. AudioManager muted; WAV played back via AudioPlayer; mic re-enabled when done
+11. barge_in command (or natural playback end) clears player buffer, re-enables mic
 ```
 
 ### Barge-in
@@ -142,9 +143,10 @@ The sidecar is a Python process exposing three local HTTP endpoints on `localhos
 
 | Endpoint | Direction | Purpose |
 |---|---|---|
-| `POST /asr/transcribe` | Rust → ASR | Send 16kHz mono f32 audio clip, receive transcript text |
-| `POST /llm/chat` (stream) | Rust → LLM | Send messages[], receive structured JSON token stream |
-| `POST /tts/speak` (WebSocket) | Rust → TTS | Send text tokens, receive PCM frames |
+| `POST /asr/transcribe` | Rust → ASR | Send 16kHz mono f32 audio (base64), receive transcript text |
+| `POST /llm/chat` (SSE) | Rust → LLM | Send messages[], receive plain-text token stream |
+| `POST /tts/speak` | Rust → TTS | Send text, receive WAV bytes |
+| `GET /health` | Rust → sidecar | Readiness probe before starting a session |
 
 ### Audio format into ASR
 
@@ -152,102 +154,116 @@ Complete utterance sent as raw PCM bytes (base64), 16kHz mono f32. The VAD deter
 
 ### Text format out of LLM
 
-The LLM is instructed to return structured JSON via mlx-lm's `guided_json` parameter:
-
-```json
-{
-  "transcript": "What does momo mean?",
-  "response": "もも (momo) means peach! It's an N4 word...",
-  "milestone": false
-}
-```
-
-- `transcript` — what the user said (may contain mixed English/Japanese)
-- `response` — the tutor's reply, streamed token by token to TTS
-- `milestone` — `true` when the tutor considers the exchange closed with positive feedback; triggers context compaction (see Context Management)
-
-Using `guided_json` rather than prompt-engineering a delimiter avoids fragile bracket-splitting, which fails when Japanese text naturally contains 「」 characters.
+The LLM returns plain text — the tutor's reply only. No structured JSON wrapper. `parse_response_pub` in `tutor/src/session.rs` trims whitespace; milestone detection is a TODO placeholder that always returns `false` for now.
 
 ### TTS
 
-Qwen3-TTS-12Hz-1.7B-VoiceDesign runs in the same sidecar process. Text tokens from the LLM response pipe directly into TTS via WebSocket as they arrive — sentence boundary buffered. First audio packet latency is ~97ms.
+Qwen3-TTS CustomVoice runs in the same sidecar process. The LLM reply is accumulated in full before being sent to TTS (POST returns a complete WAV). Rust decodes the WAV, pushes PCM to `AudioPlayer`, and polls until playback finishes or a barge-in is detected. Mic capture is muted for the duration to prevent echo.
 
 ---
 
-## Vocabulary Database
+## Database
 
-SQLite via the `db` crate. Schema designed around JLPT-ordered spaced repetition.
+SQLite via the `db` crate. Schema versioned with `PRAGMA user_version` (currently v1). All tables created on first run; N5 seed data inserted automatically.
 
-### Tables
+### Schema
+
+```
+┌──────────────────┐     ┌─────────────────────┐
+│ learner_profile  │     │ topics               │
+│ sessions         │     │ topic_dependencies   │ (dependency graph)
+│ conversation_    │     │ topic_vocabulary     │ (topic ↔ vocab join)
+│   turns          │     │ topic_kanji          │ (topic ↔ kanji join)
+│                  │     │ student_topic_progress│
+└──────────────────┘     └─────────────────────┘
+       │                         │
+       ▼                         ▼
+┌──────────────────┐     ┌─────────────────────┐
+│ vocabulary       │     │ kanji                │
+│ student_         │     │ student_kanji        │
+│   vocabulary     │     │ vocabulary_kanji     │ (vocab ↔ kanji join)
+└──────────────────┘     └─────────────────────┘
+       │                         │
+       └────────────┬────────────┘
+                    ▼
+             ┌──────────────┐
+             │ srs_schedule │ (item_type + item_id covers both)
+             └──────────────┘
+
+┌──────────────────────────┐   ┌───────────────────┐
+│ lesson_summaries         │   │ lesson_plans       │
+│ lesson_summary_topics    │   │ lesson_plan_topics │
+│ lesson_summary_vocabulary│   └───────────────────┘
+└──────────────────────────┘
+```
+
+### Key design decisions
+
+**Vocabulary fluency (0–10 per word)**
+Each word a student has encountered gets a `student_vocabulary` row with `fluency_level 0–10`. Fluency increases on correct use and decreases on incorrect attempts. A topic is considered complete when every word in it reaches fluency 10. Words are never "forgotten" — they resurface for review as long as fluency < 10.
+
+**Kanji track (Anki-style)**
+Kanji are a separate track from vocabulary (`kanji` table, `student_kanji` progress). They are linked back to vocabulary words via `vocabulary_kanji`. Kanji topics are typed `topic_type = 'kanji'`; vocabulary topics use `'vocabulary'`. The same SRS schedule covers both.
+
+**SRS generic over both**
+`srs_schedule` uses `(item_type TEXT, item_id INTEGER)` rather than a per-table FK. Covers vocabulary and kanji with one SM-2 implementation.
+
+**Topic dependency graph**
+`topic_dependencies` is a many-to-many table: `(topic_id, depends_on_topic_id)`. The tutor finds the next available topic by selecting the lowest-sequence topic whose dependencies are all completed. Topics with no dependencies (Greetings, Self-Introduction, Numbers 1–10) are available from day one.
+
+**Seed data (N5)**
+`db/src/seed.rs` contains `N5_SEED_SQL`: 14 topics, 130 vocabulary entries, 36 kanji, all join-table links, and 4 lesson plans. Inserted with `OR IGNORE` on first run.
+
+### Core tables
 
 ```sql
--- Every Japanese word/phrase the user has ever encountered
-CREATE TABLE vocabulary (
-    id          INTEGER PRIMARY KEY,
-    word        TEXT NOT NULL,        -- 食べる
-    reading     TEXT,                 -- たべる
-    meaning     TEXT,                 -- to eat
-    jlpt_level  INTEGER,              -- 5=N5, 4=N4 ... 1=N1, 0=unclassified
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+-- Curriculum
+CREATE TABLE topics (
+    id INTEGER PRIMARY KEY, jlpt_level INTEGER NOT NULL,
+    sequence_order INTEGER NOT NULL, name TEXT NOT NULL,
+    description TEXT NOT NULL, topic_type TEXT NOT NULL  -- 'vocabulary' | 'kanji'
+);
+CREATE TABLE topic_dependencies (
+    topic_id INTEGER NOT NULL, depends_on_topic_id INTEGER NOT NULL,
+    PRIMARY KEY (topic_id, depends_on_topic_id)
 );
 
--- Each time the word appeared in conversation
-CREATE TABLE encounters (
-    id              INTEGER PRIMARY KEY,
-    vocabulary_id   INTEGER REFERENCES vocabulary(id),
-    encountered_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    context         TEXT,             -- the sentence it appeared in
-    understood      BOOLEAN           -- did the user use/respond correctly?
+-- Per-word progress
+CREATE TABLE student_vocabulary (
+    id INTEGER PRIMARY KEY, vocabulary_id INTEGER NOT NULL UNIQUE,
+    fluency_level INTEGER NOT NULL DEFAULT 0,  -- 0–10
+    times_correct INTEGER NOT NULL DEFAULT 0, times_incorrect INTEGER NOT NULL DEFAULT 0,
+    last_seen_at DATETIME
 );
 
--- SRS scheduling per word
+-- SRS (covers vocabulary and kanji)
 CREATE TABLE srs_schedule (
-    vocabulary_id   INTEGER PRIMARY KEY REFERENCES vocabulary(id),
-    interval_days   REAL DEFAULT 1,   -- current SRS interval
-    ease_factor     REAL DEFAULT 2.5, -- SM-2 ease factor
-    due_at          DATETIME,         -- next review due
-    streak          INTEGER DEFAULT 0 -- consecutive correct recalls
+    id INTEGER PRIMARY KEY, item_type TEXT NOT NULL, item_id INTEGER NOT NULL,
+    interval_days REAL NOT NULL DEFAULT 1, ease_factor REAL NOT NULL DEFAULT 2.5,
+    due_at DATETIME, streak INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(item_type, item_id)
 );
 
--- User's current JLPT level per domain
-CREATE TABLE learner_profile (
-    id              INTEGER PRIMARY KEY,
-    current_level   INTEGER DEFAULT 5, -- N5 = beginner
-    target_level    INTEGER DEFAULT 4,
-    total_words     INTEGER DEFAULT 0,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+-- Lesson summaries (structured, not text blobs)
+CREATE TABLE lesson_summaries (
+    id INTEGER PRIMARY KEY, session_id INTEGER, created_at DATETIME, notes TEXT NOT NULL DEFAULT ''
 );
-```
-
-### JLPT Ordering
-
-Words are introduced in JLPT level order — N5 first, then N4, N3, N2, N1. Within each level, high-frequency words are prioritised. The tutor system prompt is dynamically constructed from the learner's current vocabulary state:
-
-```
-System prompt includes:
-- Learner's current level (N5/N4/etc.)
-- Words they know well (don't need to explain)
-- Words due for review today (weave into conversation)
-- Words at the boundary of their level (introduce naturally)
+CREATE TABLE lesson_summary_topics (
+    id INTEGER PRIMARY KEY, lesson_summary_id INTEGER NOT NULL,
+    topic_id INTEGER, topic_name TEXT NOT NULL, status TEXT NOT NULL
+);
+CREATE TABLE lesson_summary_vocabulary (
+    id INTEGER PRIMARY KEY, lesson_summary_id INTEGER NOT NULL,
+    vocabulary_id INTEGER NOT NULL, word TEXT NOT NULL, outcome TEXT NOT NULL
+);
 ```
 
 ### Spaced Repetition (SM-2 variant)
 
-Each word in `srs_schedule` follows a modified SM-2 algorithm:
-
-- First encounter → interval: 1 day
-- Correct recall → interval × ease_factor, ease_factor += 0.1
-- Incorrect/not recalled → interval reset to 1, ease_factor -= 0.2 (min 1.3)
-- Words due today are injected into the tutor's context
-
-### Vocabulary Extraction
-
-After each LLM response, the `db` crate parses the transcript and response text for Japanese vocabulary using a lightweight morphological approach (no external dependency — a curated JLPT word list lookup against known tokens). Each word found is:
-
-1. Looked up against the JLPT word list
-2. Added to `vocabulary` if new
-3. Added to `encounters` with the sentence context
-4. `srs_schedule` updated based on whether the user used it correctly
+- First encounter → scheduled 1 day out
+- Correct recall → `interval × ease_factor`, `ease_factor += 0.1` (max 4.0)
+- Incorrect → interval reset to 1 day, `ease_factor -= 0.2` (min 1.3)
+- Due items surfaced in `session_context()` for injection into the system prompt
 
 ---
 
@@ -261,65 +277,27 @@ The Python sidecar runs as a single persistent process with all three models loa
 
 ### Milestone detection
 
-When the tutor returns `"milestone": true` in its JSON response, the exchange is considered closed — the student answered correctly and the tutor gave positive feedback. This is the trigger point.
+`parse_response_pub` currently returns `milestone: false` on every turn — detection is a TODO. When implemented, a milestone will fire when the student correctly uses a target word and the tutor gives positive feedback.
 
 ### Compaction flow
 
-The milestone fires during TTS playback of the positive feedback response, giving a free window of ~2–5 seconds:
+When a milestone turn crosses 80% of the 4096-token budget:
 
 ```
-milestone: true received
-  → TTS begins playing positive feedback audio
-  → [in parallel]:
-       1. flush conversation_turns and SRS updates to SQLite
-       2. ask LLM to produce a structured lesson summary
-          { topics_covered, words_introduced, words_reviewed, continue_from }
-       3. store summary in SQLite (lesson_summaries table)
-       4. build new messages[]: system prompt + student_profile + lesson_summary
-  → TTS finishes playing
-  → swap active messages[] pointer to the new context (atomic, microseconds)
-  → old messages[] dropped
+milestone: true detected (TODO — currently never fires)
+  → turn persisted and vocabulary introduced
+  → ask LLM to produce {"notes": "..."} lesson summary
+  → save summary to lesson_summaries table
+  → call db.session_context() for fresh topic + SRS state
+  → rebuild system prompt from new SessionContext
+  → call reset_context() to swap in a fresh message list
 ```
 
-The student never sees a pause. The handoff is invisible.
+The student never sees a pause — the swap happens between TTS playback completing and the next mic capture.
 
-### Fallback
+### Lesson summary format
 
-If the summary generation is not finished before TTS ends (slow hardware, long summary), the session manager continues on the existing context and retries at the next milestone. Context accumulates a little further but nothing breaks.
-
-### Lesson summary schema
-
-```sql
--- One row per conversation session
-CREATE TABLE sessions (
-    id                INTEGER PRIMARY KEY,
-    started_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-    ended_at          DATETIME,
-    lesson_summary_id INTEGER REFERENCES lesson_summaries(id)
-);
-
--- Each student turn + tutor response
--- Written after every exchange, not just at milestone — ensures vocabulary
--- encounters are never lost to a mid-session crash
-CREATE TABLE conversation_turns (
-    id              INTEGER PRIMARY KEY,
-    session_id      INTEGER REFERENCES sessions(id),
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-    student_input   TEXT,           -- raw transcript
-    tutor_response  TEXT,           -- tutor response text
-    milestone       BOOLEAN DEFAULT FALSE
-);
-
--- Generated at each milestone, seeded into the next conversation context
-CREATE TABLE lesson_summaries (
-    id               INTEGER PRIMARY KEY,
-    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
-    topics_covered   TEXT,   -- JSON array of grammar points / topics
-    words_introduced TEXT,   -- JSON array of vocabulary_ids
-    words_reviewed   TEXT,   -- JSON array of vocabulary_ids
-    continue_from    TEXT    -- free-text hint for the next context window
-);
-```
+The LLM is asked to produce `{"notes": "..."}` — a freeform paragraph covering what was practised, any errors, and what to continue next session. `parse_summary_pub` extracts the `notes` field and stores it in `lesson_summaries.notes`. The `lesson_summary_topics` and `lesson_summary_vocabulary` join tables exist for future structured tracking.
 
 ---
 
@@ -376,22 +354,22 @@ FastAPI server (`sidecar/server.py`) loading all three models lazily from `Model
 - `GET /health` — readiness probe
 
 ### Step 3 — llm + tutor crates ✅
-`llm` crate: `SidecarClient` with `transcribe()`, `chat_stream()` (SSE), and `speak()`. Parses SSE `data:` lines, assembles token stream. `tutor` crate: `TutorSession` tracks message history and token estimate; `build_system_prompt` constructs the system message from learner profile and last lesson summary.
+`llm` crate: `SidecarClient` with `transcribe()`, `chat_stream()` (SSE), and `speak()`. Parses SSE `data:` lines, assembles plain-text token stream. `tutor` crate: `TutorSession` tracks message history and token estimate; `build_system_prompt` takes a `SessionContext` and constructs the system message (level, active topic, pending words, SRS due, last lesson notes).
 
 ### Step 4 — cpal output ✅
 `AudioPlayer` (`audio_engine/player.rs`) opens a cpal output stream backed by a ring buffer. `play_chunk()` pushes f32 PCM. `stop()` sets a barge-in flag that drains the buffer and silences output immediately. `resume()` clears the flag for the next TTS response.
 
 ### Step 5 — Tauri commands ✅
-`lib.rs` wires everything into three commands: `start_session`, `stop_session`, `barge_in`. The `handle_turn` async function runs the full per-utterance pipeline (ASR → session → LLM stream → persist turn → compact if needed → TTS playback). Events emitted to React: `transcript`, `response_token`, `response_done`, `error`.
+`lib.rs` wires everything into three commands: `start_session`, `stop_session`, `barge_in`. The `handle_turn` async function runs the full per-utterance pipeline: ASR → push user turn → LLM stream → emit `response_done` → persist turn → introduce vocabulary → compact if milestone → TTS playback with mute/unmute. Events emitted to React: `transcript`, `response_done`, `session_ready`, `error`.
 
 ### Step 6 — React UI 🔄
 `ChatWindow` component exists with message list and input. **Not yet connected to Tauri** — `useChat.ts` still uses hardcoded test messages. `useEvents.ts` and `api.ts` reference old command/event names from an earlier design. Next: wire `transcript`, `response_token`, and `response_done` events into the chat state, and call `start_session` / `stop_session` from the audio button.
 
-### Step 7 — db crate 🔄
-Full SQLite schema in place via `store.rs` (sessions, conversation_turns, lesson_summaries, vocabulary, encounters, srs_schedule, learner_profile). Session tracking, turn recording, learner profile, lesson summary save/load, and SRS scheduling all implemented. **Not yet wired**: `upsert_vocabulary` and `record_encounter` exist but `handle_turn` does not yet call them — vocabulary extraction from transcripts is the remaining piece.
+### Step 7 — db crate ✅ (schema + introduction) / 🔄 (fluency updates)
+Full N5 curriculum schema in place: topics, topic dependencies, vocabulary, kanji, student_vocabulary, student_kanji, SRS schedule, lesson plans, and structured lesson summaries. N5 seed data (14 topics, 130 words, 36 kanji) inserted on first run via `PRAGMA user_version` migration. `session_context()`, `find_vocab_in_text()`, `introduce_word()`, `update_word_fluency()`, `update_kanji_fluency()`, `mark_topic_status()`, `save_lesson_summary()`, and `latest_lesson_summary()` all implemented. `handle_turn` calls `find_vocab_in_text` + `introduce_word` after each turn. **Not yet wired**: `update_word_fluency` — requires milestone detection to know whether an attempt was correct.
 
 ### Step 8 — Dynamic system prompt ✅
-`tutor/prompt.rs` builds the system message from `LearnerProfile` (current JLPT level, total words) and the latest `LessonSummary` (topics covered, continue-from hint). Called in `TutorSession::new` and again after each context compaction.
+`tutor/prompt.rs` builds the system message from a `SessionContext`: student level, active topic name + description, first 5 pending words to introduce, already-seen words in the topic, SRS-due words, and previous lesson notes. Called in `TutorSession::new` (which also marks the active topic as `in_progress`) and rebuilt from a fresh `session_context()` call after each context compaction.
 
 ### Step 9 — Context compaction ✅
 `TutorSession` tracks a rolling token estimate. When a milestone turn crosses 80% of the 4096-token budget, `compact_context` in `lib.rs` streams a structured lesson summary from the LLM, saves it to SQLite, rebuilds the system prompt, and calls `reset_context` to swap in a fresh message list. The swap is a pointer change — no pause in the conversation.
