@@ -3,37 +3,54 @@ import { useEffect } from 'react';
 import { useAppStore } from './store';
 
 export default function useEvents() {
-    const addMessage      = useAppStore((s) => s.addMessage);
-    const appendToken     = useAppStore((s) => s.appendToken);
-    const finalizeStream  = useAppStore((s) => s.finalizeStream);
+    const addMessage       = useAppStore((s) => s.addMessage);
+    const appendToken      = useAppStore((s) => s.appendToken);
+    const finalizeStream   = useAppStore((s) => s.finalizeStream);
     const setSessionStatus = useAppStore((s) => s.setSessionStatus);
 
     useEffect(() => {
+        // `cancelled` guards against the React StrictMode double-mount pattern:
+        // cleanup runs synchronously before the async listen() calls resolve,
+        // so we track cancellation and immediately unlisten if we were torn down.
+        let cancelled = false;
         const cleanup: UnlistenFn[] = [];
 
         async function register() {
-            cleanup.push(
-                await listen<{ text: string }>('transcript', (e) =>
+            const fns = await Promise.all([
+                listen<{ text: string }>('transcript', (e) => {
+                    console.log("[backend] transcript:", e);
                     addMessage('user', e.payload.text)
+                }
                 ),
-                await listen<{ token: string }>('response_token', (e) =>
-                    appendToken(e.payload.token)
+                    listen<{ full_response: string; milestone: boolean }>('response_done', (e) =>{
+                    console.log("[backend] response_done:", e);
+                    finalizeStream(e.payload.full_response)}
                 ),
-                await listen<{ full_response: string; milestone: boolean }>('response_done', (e) =>
-                    finalizeStream(e.payload.full_response)
+                listen<{ greeting: string }>('session_ready', (e) =>{
+                    console.log("[backend] session_ready:", e);
+                    setSessionStatus('ready')}
                 ),
-                await listen<{ greeting: string }>('session_ready', () =>
-                    setSessionStatus('ready')
-                ),
-                await listen<{ message: string }>('error', (e) => {
+                listen<{ message: string }>('error', (e) => {
+                    console.log("[backend] error:", e);
                     console.error('[backend]', e.payload.message);
                     addMessage('system', `Error: ${e.payload.message}`);
                     setSessionStatus('idle');
                 }),
-            );
+            ]);
+
+            if (cancelled) {
+                fns.forEach((fn) => fn());
+                return;
+            }
+
+            cleanup.push(...fns);
         }
 
         register();
-        return () => cleanup.forEach((fn) => fn());
+
+        return () => {
+            cancelled = true;
+            cleanup.forEach((fn) => fn());
+        };
     }, [addMessage, appendToken, finalizeStream, setSessionStatus]);
 }
