@@ -446,6 +446,22 @@ pip install mlx-lm mlx-audio
 
 ---
 
+## Planned Work
+
+### Placement onboarding for returning learners
+
+One-time screen shown on first launch. Four level-select buttons map to JLPT N5–N2. Selecting one writes `current_level` to `learner_profile` and sets a `setup_complete` flag (new column, schema v2 migration). On subsequent launches the flag is read on mount and the screen is skipped.
+
+**DB changes** (`store.rs`): bump `SCHEMA_VERSION` to 2; add `setup_complete INTEGER DEFAULT 0` to `learner_profile`; add `is_setup_complete()`, `mark_setup_complete()`, `update_learner_level()`.
+
+**Tauri commands** (`lib.rs`): `is_setup_complete() → bool`, `set_learner_level(level: u8)`.
+
+**Frontend**: `isSetupComplete()` + `setLearnerLevel(n)` in `api.ts`; `showOnboarding: bool` in Zustand store; new `src/components/onboarding/index.tsx` using existing `Stack` / `Button` primitives; `App.tsx` checks flag on mount and conditionally renders `<OnboardingScreen />`.
+
+**Prompt** (`prompt.rs`): when `current_level < 5`, inject a note telling the tutor to keep pace brisk — the student has prior experience and is reviewing below-level material.
+
+---
+
 ## Future Considerations
 
 - **Pitch accent feedback** — raw audio from the ASR step can be analysed for pronunciation patterns before transcription
