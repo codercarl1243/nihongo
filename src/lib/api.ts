@@ -11,3 +11,7 @@ export async function stopSession(): Promise<void> {
 export async function bargeIn(): Promise<void> {
     return invoke('barge_in');
 }
+
+export async function getSidecarReady(): Promise<boolean> {
+    return invoke('get_sidecar_ready');
+}

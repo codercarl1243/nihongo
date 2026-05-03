@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 use std::time::Duration;
 
 use audio_engine::{AudioManager, AudioPlayer, EngineConfig};
@@ -16,11 +16,12 @@ use tutor::{parse_response_pub, parse_summary_pub, TutorSession};
 // ---------------------------------------------------------------------------
 
 struct AppState {
-    audio:   Mutex<AudioManager>,
-    player:  Mutex<AudioPlayer>,
-    llm:     SidecarClient,
-    db:      Mutex<Db>,
-    session: Mutex<Option<TutorSession>>,
+    audio:          Mutex<AudioManager>,
+    player:         Mutex<AudioPlayer>,
+    llm:            SidecarClient,
+    db:             Mutex<Db>,
+    session:        Mutex<Option<TutorSession>>,
+    sidecar_ready:  AtomicBool,
 }
 
 // Compile-time path to the sidecar directory; resolves relative to src-tauri/.
@@ -123,6 +124,13 @@ async fn stop_session(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 fn barge_in(state: State<'_, AppState>) {
     state.player.lock().unwrap().stop();
+}
+
+/// Called by the frontend on mount to catch up with the sidecar status in case
+/// the `sidecar_status` event fired before event listeners were registered.
+#[tauri::command]
+fn get_sidecar_ready(state: State<'_, AppState>) -> bool {
+    state.sidecar_ready.load(Ordering::SeqCst)
 }
 
 // ---------------------------------------------------------------------------
@@ -397,9 +405,14 @@ async fn start_sidecar_background(app: AppHandle) {
 
     emit("warming_up", None);
 
+    let mark_ready = || {
+        app.state::<AppState>().sidecar_ready.store(true, Ordering::SeqCst);
+        emit("ready", None);
+    };
+
     // Already running — nothing to do.
     if sidecar_is_up().await {
-        emit("ready", None);
+        mark_ready();
         return;
     }
 
@@ -419,7 +432,7 @@ async fn start_sidecar_background(app: AppHandle) {
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
         if sidecar_is_up().await {
-            emit("ready", None);
+            mark_ready();
             return;
         }
         if tokio::time::Instant::now() >= deadline {
@@ -440,11 +453,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
-            audio:   Mutex::new(AudioManager::new()),
-            player:  Mutex::new(AudioPlayer::new()),
-            llm:     SidecarClient::new(),
-            db:      Mutex::new(db),
-            session: Mutex::new(None),
+            audio:         Mutex::new(AudioManager::new()),
+            player:        Mutex::new(AudioPlayer::new()),
+            llm:           SidecarClient::new(),
+            db:            Mutex::new(db),
+            session:       Mutex::new(None),
+            sidecar_ready: AtomicBool::new(false),
         })
         .setup(|app| {
             let handle = app.handle().clone();
@@ -455,6 +469,7 @@ pub fn run() {
             start_session,
             stop_session,
             barge_in,
+            get_sidecar_ready,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

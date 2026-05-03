@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useEffect } from 'react';
+import { getSidecarReady } from './api';
 import { useAppStore } from './store';
 
 export default function useEvents() {
@@ -52,6 +53,14 @@ export default function useEvents() {
             }
 
             cleanup.push(...fns);
+
+            // The sidecar_status: ready event may have fired before listeners
+            // were registered (race on startup). Query the current flag so we
+            // don't get stuck on 'warming_up' when the sidecar was already up.
+            const ready = await getSidecarReady();
+            if (!cancelled && ready) {
+                setSessionStatus('idle');
+            }
         }
 
         register();
