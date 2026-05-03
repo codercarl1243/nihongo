@@ -41,17 +41,29 @@ pub struct AudioStreams {
 
 pub struct AudioManager {
     is_running: Arc<AtomicBool>,
+    muted:      Arc<AtomicBool>,
 }
 
 impl AudioManager {
     pub fn new() -> Self {
         Self {
             is_running: Arc::new(AtomicBool::new(false)),
+            muted:      Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub fn audio_is_running(&self) -> bool {
         self.is_running.load(Ordering::SeqCst)
+    }
+
+    /// Discard all incoming audio — call before TTS playback to prevent echo.
+    pub fn mute(&self) {
+        self.muted.store(true, Ordering::SeqCst);
+    }
+
+    /// Resume capture after TTS playback finishes.
+    pub fn unmute(&self) {
+        self.muted.store(false, Ordering::SeqCst);
     }
 
     pub fn stop(&self) -> Result<()> {
@@ -72,9 +84,10 @@ impl AudioManager {
 
         self.is_running.store(true, Ordering::SeqCst);
         let running = self.is_running.clone();
+        let muted   = self.muted.clone();
 
         thread::spawn(move || {
-            if let Err(e) = Self::run_loop(partial_tx, turn_tx, running, config) {
+            if let Err(e) = Self::run_loop(partial_tx, turn_tx, running, muted, config) {
                 eprintln!("[manager] loop error: {}", e);
             }
         });
@@ -89,6 +102,7 @@ impl AudioManager {
         partial_tx: mpsc::Sender<Vec<f32>>,
         turn_tx: mpsc::Sender<Vec<f32>>,
         running: Arc<AtomicBool>,
+        muted: Arc<AtomicBool>,
         config: EngineConfig,
     ) -> Result<()> {
         let (capture, mut consumer) = AudioCapture::start()?;
@@ -107,6 +121,19 @@ impl AudioManager {
         let mut samples_emitted_as_partial: usize = 0;
 
         while running.load(Ordering::SeqCst) {
+            // While muted (TTS playing), drain audio silently to keep the
+            // capture buffer from overflowing, but don't feed VAD or emit turns.
+            // TODO: detect speech during mute and treat it as a voice barge-in,
+            // stopping TTS and unmuting so the user's utterance is captured.
+            if muted.load(Ordering::SeqCst) {
+                let _ = resampler.process_available(&mut consumer);
+                speech_buffer.clear();
+                in_turn = false;
+                samples_emitted_as_partial = 0;
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+
             let mut mono_16k = match resampler.process_available(&mut consumer) {
                 Ok(s) if !s.is_empty() => s,
                 Ok(_) => {
