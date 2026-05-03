@@ -12,17 +12,20 @@ type AppState = {
     sessionStatus: SessionStatus;
     messages: Message[];
     streamingText: string;
+    promptTokens: number;
 
     setSessionStatus: (status: SessionStatus) => void;
     addMessage: (sender: 'user' | 'tutor' | 'system', text: string) => void;
     appendToken: (token: string) => void;
     finalizeStream: (fullText: string) => void;
+    setPromptTokens: (n: number) => void;
 };
 
 export const useAppStore = create<AppState>((set) => ({
     sessionStatus: 'warming_up',
     messages: [],
     streamingText: '',
+    promptTokens: 0,
 
     setSessionStatus: (sessionStatus) => set({ sessionStatus }),
 
@@ -42,4 +45,6 @@ export const useAppStore = create<AppState>((set) => ({
             ],
             streamingText: '',
         })),
+
+    setPromptTokens: (promptTokens) => set({ promptTokens }),
 }));

@@ -125,23 +125,30 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
     )
 
     loop = asyncio.get_event_loop()
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    queue: asyncio.Queue[str | dict | None] = asyncio.Queue()
 
     def _generate():
+        prompt_tokens = len(tokenizer.encode(prompt))
+        generation_tokens = 0
         try:
             for response in stream_generate(model, tokenizer, prompt, max_tokens=max_tokens):
                 text = response.text if hasattr(response, "text") else str(response)
                 queue.put_nowait(text)
+                generation_tokens += 1
         finally:
+            queue.put_nowait({"prompt_tokens": prompt_tokens, "generation_tokens": generation_tokens})
             queue.put_nowait(None)
 
     loop.run_in_executor(_ml_executor, _generate)
 
     while True:
-        token = await queue.get()
-        if token is None:
+        item = await queue.get()
+        if item is None:
             break
-        yield f"data: {json.dumps({'token': token})}\n\n"
+        if isinstance(item, dict):
+            yield f"data: {json.dumps({'usage': item})}\n\n"
+        else:
+            yield f"data: {json.dumps({'token': item})}\n\n"
 
     yield "data: [DONE]\n\n"
 

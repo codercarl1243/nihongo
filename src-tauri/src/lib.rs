@@ -5,7 +5,7 @@ use std::time::Duration;
 use audio_engine::{AudioManager, AudioPlayer, EngineConfig};
 use chrono::Timelike as _;
 use db::Db;
-use llm::{ChatMessage, SidecarClient};
+use llm::{ChatMessage, ChatUsage, SidecarClient, StreamItem};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio_stream::StreamExt;
@@ -36,7 +36,7 @@ struct SidecarStatusEvent { state: String, message: Option<String> }
 #[derive(Clone, Serialize)]
 struct TranscriptEvent    { text: String }
 #[derive(Clone, Serialize)]
-struct ResponseDoneEvent  { full_response: String, milestone: bool }
+struct ResponseDoneEvent  { full_response: String, milestone: bool, prompt_tokens: u32 }
 #[derive(Clone, Serialize)]
 struct SessionReadyEvent  { greeting: String }
 #[derive(Clone, Serialize)]
@@ -165,6 +165,7 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
     app.emit("response_done", ResponseDoneEvent {
         full_response: greeting.to_string(),
         milestone: false,
+        prompt_tokens: 0,
     })?;
     app.emit("session_ready", SessionReadyEvent { greeting: greeting.to_string() })?;
 
@@ -207,21 +208,26 @@ async fn handle_turn(
     let llm_clone  = llm.clone();
     let msgs_clone = messages.clone();
     let llm_task   = tokio::spawn(async move {
-        let mut buf  = String::new();
-        let mut full = String::new();
+        let mut buf   = String::new();
+        let mut full  = String::new();
+        let mut usage = ChatUsage::default();
         let mut stream = llm_clone.chat_stream(&msgs_clone).await?;
-        while let Some(chunk) = stream.next().await {
-            let tok = chunk?;
-            full.push_str(&tok);
-            buf.push_str(&tok);
-            while let Some(sent) = flush_sentence(&mut buf) {
-                sentence_tx.send(sent).await.ok();
+        while let Some(item) = stream.next().await {
+            match item? {
+                StreamItem::Token(tok) => {
+                    full.push_str(&tok);
+                    buf.push_str(&tok);
+                    while let Some(sent) = flush_sentence(&mut buf) {
+                        sentence_tx.send(sent).await.ok();
+                    }
+                }
+                StreamItem::Usage(u) => { usage = u; }
             }
         }
         // flush remainder (no terminal punctuation)
         let rem = buf.trim().to_string();
         if !rem.is_empty() { sentence_tx.send(rem).await.ok(); }
-        Ok::<String, anyhow::Error>(full)
+        Ok::<(String, ChatUsage), anyhow::Error>((full, usage))
     });
 
     let mut muted         = false;
@@ -238,11 +244,12 @@ async fn handle_turn(
         state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
     }
 
-    let full_text  = llm_task.await??;
+    let (full_text, usage) = llm_task.await??;
     let tutor_resp = parse_response_pub(&full_text);
     app.emit("response_done", ResponseDoneEvent {
         full_response: tutor_resp.response.clone(),
         milestone: tutor_resp.milestone,
+        prompt_tokens: usage.prompt_tokens,
     })?;
 
     // ── 4. Persist turn (sync, lock dropped before await) ───────────────────
@@ -316,8 +323,10 @@ async fn compact_context(app: &AppHandle, llm: &SidecarClient) -> anyhow::Result
     let mut raw_summary = String::new();
     {
         let mut stream = llm.chat_stream(&summary_msgs).await?;
-        while let Some(chunk) = stream.next().await {
-            raw_summary.push_str(&chunk?);
+        while let Some(item) = stream.next().await {
+            if let StreamItem::Token(tok) = item? {
+                raw_summary.push_str(&tok);
+            }
         }
     }
 
