@@ -11,9 +11,14 @@
       "path": "~/llm_models/mlx-community/Qwen3.6-27B-4bit"
     },
     {
-      "id": "tts",
+      "id": "tts-vd",
       "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
       "path": "~/llm_models/mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16"
+    },
+      {
+      "id": "tts-cv",
+      "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+      "path": "~/llm_models/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     }
   ]
 }

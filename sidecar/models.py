@@ -22,7 +22,7 @@ class Models:
 
         self.asr_path = paths["asr"]
         self.llm_path = paths["llm"]
-        self.tts_path = paths["tts"]
+        self.tts_path = paths["tts-cv"]
 
         print(f"[models] ASR  : {self.asr_path}")
         print(f"[models] LLM  : {self.llm_path}")

@@ -10,13 +10,13 @@ Run: uvicorn server:app --host 127.0.0.1 --port 8091
 
 import asyncio
 import base64
+import concurrent.futures
 import io
 import json
-import struct
 from typing import AsyncGenerator
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -25,11 +25,16 @@ from models import Models
 app = FastAPI()
 _models: Models | None = None
 
+# Single-threaded executor for all ML inference — MLX GPU streams are
+# thread-local, so keeping everything on one thread avoids stream errors.
+_ml_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+
 
 @app.on_event("startup")
 async def startup():
     global _models
-    _models = Models()
+    loop = asyncio.get_event_loop()
+    _models = await loop.run_in_executor(_ml_executor, Models)
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +61,7 @@ class ChatRequest(BaseModel):
 
 class SpeakRequest(BaseModel):
     text: str
-    voice: str = "A warm, clear Japanese female tutor voice with a calm and encouraging tone"
+    voice: str = "Ono_Anna"
 
 
 # ---------------------------------------------------------------------------
@@ -66,27 +71,25 @@ class SpeakRequest(BaseModel):
 @app.post("/asr/transcribe", response_model=TranscribeResponse)
 async def transcribe(req: TranscribeRequest):
     raw = base64.b64decode(req.audio_b64)
-    n = len(raw) // 4
     audio = np.frombuffer(raw, dtype=np.float32).copy()
-
-    asr = _models.get_asr()
-
     loop = asyncio.get_event_loop()
-    transcript = await loop.run_in_executor(None, _run_asr, asr, audio)
-
+    transcript = await loop.run_in_executor(_ml_executor, _run_asr, audio)
     return TranscribeResponse(transcript=transcript.strip())
 
 
-def _run_asr(asr_model, audio: np.ndarray) -> str:
-    """Blocking ASR inference — runs in a thread executor."""
+def _run_asr(audio: np.ndarray) -> str:
+    """Blocking ASR inference — runs on _ml_executor so MLX streams match."""
     import mlx.core as mx
     from mlx_audio.stt.generate import generate_transcription
+    asr_model = _models.get_asr()
     audio_mx = mx.array(audio)
-    segments = generate_transcription(model=asr_model, audio=audio_mx)
+    segments = generate_transcription(model=asr_model, audio=audio_mx, task="transcribe")
     if segments is None:
         return ""
     if isinstance(segments, list):
         return "".join(s.get("text", "") if isinstance(s, dict) else getattr(s, "text", str(s)) for s in segments)
+    if hasattr(segments, "text"):
+        return segments.text
     return str(segments)
 
 
@@ -114,6 +117,7 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
         messages,
         tokenize=False,
         add_generation_prompt=True,
+        enable_thinking=False,
     )
 
     loop = asyncio.get_event_loop()
@@ -127,7 +131,7 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
         finally:
             queue.put_nowait(None)
 
-    loop.run_in_executor(None, _generate)
+    loop.run_in_executor(_ml_executor, _generate)
 
     while True:
         token = await queue.get()
@@ -145,7 +149,7 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
 @app.post("/tts/speak")
 async def speak(req: SpeakRequest):
     loop = asyncio.get_event_loop()
-    wav_bytes = await loop.run_in_executor(None, _run_tts, req.text, req.voice)
+    wav_bytes = await loop.run_in_executor(_ml_executor, _run_tts, req.text, req.voice)
     return Response(content=wav_bytes, media_type="audio/wav")
 
 
@@ -158,7 +162,7 @@ def _run_tts(text: str, voice: str) -> bytes:
 
     audio_chunks = []
     sample_rate = 24000
-    for result in tts.generate(text, instruct=voice):
+    for result in tts.generate(text, voice=voice):
         audio_chunks.append(np.array(result.audio))
         sample_rate = result.sample_rate
 
