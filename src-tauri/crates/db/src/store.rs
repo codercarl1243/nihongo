@@ -214,7 +214,11 @@ impl Db {
             );
         ")?;
 
+        // OR IGNORE does not suppress FK violations in SQLite, so disable FK
+        // checks while inserting pre-validated seed data.
+        self.conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
         self.conn.execute_batch(N5_SEED_SQL)?;
+        self.conn.execute_batch("PRAGMA foreign_keys=ON;")?;
         self.conn.execute_batch("PRAGMA user_version = 1;")?;
         Ok(())
     }

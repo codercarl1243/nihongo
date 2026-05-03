@@ -270,7 +270,6 @@ INSERT OR IGNORE INTO topic_kanji (topic_id, kanji_id, sequence_order) VALUES
 INSERT OR IGNORE INTO vocabulary_kanji (vocabulary_id, kanji_id) VALUES
   (18, 10),(18, 28),   -- 名前: 名(person-related), 前
   (64, 10),            -- 家族: 人 component
-  (75, 99),            -- 食べ物 → references 食(eat) — not yet seeded, skip
   (77, 6),             -- 水 → kanji 6
   (79, 5),(79,6),      -- ごはん uses 米(not seeded), skip
   (81, 10),            -- 肉
