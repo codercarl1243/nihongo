@@ -42,8 +42,8 @@ async def startup():
 # ---------------------------------------------------------------------------
 
 class TranscribeRequest(BaseModel):
-    audio_b64: str          # base64-encoded little-endian f32 PCM at 16kHz mono
-    language: str = "ja"   # force language; prevents multi-language confusion on noisy input
+    audio_b64: str           # base64-encoded little-endian f32 PCM at 16kHz mono
+    language: str | None = None  # None = Whisper auto-detects per utterance
 
 
 class TranscribeResponse(BaseModel):
@@ -78,15 +78,16 @@ async def transcribe(req: TranscribeRequest):
     return TranscribeResponse(transcript=transcript.strip())
 
 
-def _run_asr(audio: np.ndarray, language: str) -> str:
+def _run_asr(audio: np.ndarray, language: str | None) -> str:
     """Blocking ASR inference — runs on _ml_executor so MLX streams match."""
     import mlx.core as mx
     from mlx_audio.stt.generate import generate_transcription
     asr_model = _models.get_asr()
     audio_mx = mx.array(audio)
-    segments = generate_transcription(
-        model=asr_model, audio=audio_mx, task="transcribe", language=language
-    )
+    kwargs = {"task": "transcribe"}
+    if language is not None:
+        kwargs["language"] = language
+    segments = generate_transcription(model=asr_model, audio=audio_mx, **kwargs)
     if segments is None:
         return ""
     if isinstance(segments, list):
