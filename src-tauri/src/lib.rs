@@ -225,10 +225,17 @@ async fn handle_turn(
 
     // ── 1. ASR ──────────────────────────────────────────────────────────────
     // The prompt biases the decoder toward English and Japanese without forcing
-    // a single script — "hello" stays "hello", "元気ですか" stays in kanji,
-    // and Cantonese / other languages are not detected.
-    // TODO: derive target language from learner profile for multi-language support.
-    let transcript = llm.transcribe(&normalize_peak(&audio), Some("English and Japanese.")).await?;
+    // Beginners (N5/N4) speak mostly English → "en" keeps "hello" as "hello".
+    // Intermediate/advanced (N3–N1) mix Japanese → "ja" handles code-switching.
+    // A hard language constraint prevents Whisper drifting to Hindi, Cantonese, etc.
+    let asr_language = {
+        let db = state.db.lock().unwrap();
+        match db.session_context().map(|c| c.profile.current_level).unwrap_or(5) {
+            1 | 2 | 3 => "ja",
+            _          => "en",
+        }
+    };
+    let transcript = llm.transcribe(&normalize_peak(&audio), Some(asr_language)).await?;
     if transcript.trim().is_empty() {
         return Ok(());
     }

@@ -82,10 +82,9 @@ impl SidecarClient {
     }
 
     /// Send a 16kHz mono f32 audio clip to the ASR endpoint.
-    /// `initial_prompt` steers the decoder toward expected languages without forcing
-    /// a single output script — e.g. "English and Japanese." keeps "hello" as "hello"
-    /// and prevents drift to unrelated languages like Cantonese.
-    pub async fn transcribe(&self, audio: &[f32], initial_prompt: Option<&str>) -> Result<String> {
+    /// `language` is a hard decoder constraint (e.g. "en", "ja") that prevents
+    /// drift to unrelated languages like Hindi or Cantonese.
+    pub async fn transcribe(&self, audio: &[f32], language: Option<&str>) -> Result<String> {
         let raw: Vec<u8> = audio
             .iter()
             .flat_map(|s| s.to_le_bytes())
@@ -96,14 +95,14 @@ impl SidecarClient {
         struct Req<'a> {
             audio_b64: String,
             #[serde(skip_serializing_if = "Option::is_none")]
-            initial_prompt: Option<&'a str>,
+            language: Option<&'a str>,
         }
         #[derive(Deserialize)]
         struct Resp { transcript: String }
 
         let resp: Resp = self.http
             .post(format!("{}/asr/transcribe", self.base))
-            .json(&Req { audio_b64, initial_prompt })
+            .json(&Req { audio_b64, language })
             .send()
             .await
             .context("ASR request failed")?
