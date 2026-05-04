@@ -44,7 +44,9 @@ struct ErrorEvent          { message: String }
 #[derive(Clone, Serialize)]
 struct MicStatusEvent      { active: bool }
 #[derive(Clone, Serialize)]
-struct PipelineStatusEvent { stage: String } // [PIPELINE_DEBUG]
+struct PipelineStatusEvent { stage: String }   // [PIPELINE_DEBUG]
+#[derive(Clone, Serialize)]
+struct SystemMessageEvent  { text: String }
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -172,6 +174,7 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     let greeting = build_greeting();
 
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "TTS: Synthesizing".into() }).ok(); // [PIPELINE_DEBUG]
     state.audio.lock().unwrap().mute();
     state.player.lock().unwrap().resume();
 
@@ -187,6 +190,7 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
     state.audio.lock().unwrap().unmute();
 
     let pcm_len = tts_result?;
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "Audio: Playing".into() }).ok(); // [PIPELINE_DEBUG]
     let duration = Duration::from_secs_f64(pcm_len as f64 / 24_000.0);
     wait_for_playback(&state, duration).await;
 
@@ -195,14 +199,12 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
         s.push_assistant(greeting);
     }
 
-    app.emit("response_done", ResponseDoneEvent {
-        full_response: greeting.to_string(),
-        milestone: false,
-        prompt_tokens: 0,
-    })?;
+    // Greeting is a system message — not a tutor turn — so future walkthroughs
+    // can follow the same pattern without appearing as tutor responses.
+    app.emit("system_message", SystemMessageEvent { text: greeting.to_string() })?;
     app.emit("session_ready", SessionReadyEvent { greeting: greeting.to_string() })?;
     app.emit("mic_status", MicStatusEvent { active: true })?;
-    app.emit("pipeline_status", PipelineStatusEvent { stage: "VAD 1: Listening".into() })?; // [PIPELINE_DEBUG]
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "VAD 1: Listening".into() }).ok(); // [PIPELINE_DEBUG]
 
     Ok(())
 }
@@ -358,6 +360,7 @@ async fn handle_turn(
         wait_for_playback(&state, duration).await;
     }
 
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "LLM: Classifying".into() }).ok(); // [PIPELINE_DEBUG]
     let (milestone, correction) = classify_task.await.unwrap_or((false, false));
     eprintln!("[classify] milestone={milestone} correction={correction}");
 
@@ -441,6 +444,7 @@ async fn wait_for_playback(state: &AppState, duration: Duration) {
 /// Build a summary, save it, then reset the session context.
 /// Called after a milestone when the context threshold is crossed.
 async fn compact_context(app: &AppHandle, llm: &SidecarClient) -> anyhow::Result<()> {
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "LLM: Compacting".into() }).ok(); // [PIPELINE_DEBUG]
     let state = app.state::<AppState>();
 
     // Snapshot the summary-request messages (lock dropped before await)

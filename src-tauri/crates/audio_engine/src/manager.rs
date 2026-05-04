@@ -189,6 +189,7 @@ impl AudioManager {
                 } else {
                     // No barge-in — suppress VAD for 400ms to let room echo decay.
                     echo_tail_until = Instant::now() + Duration::from_millis(400);
+                    vad_tx.try_send("Echo: Suppressing").ok(); // [PIPELINE_DEBUG] not shown in flow UI
                 }
             }
             prev_muted = is_muted;

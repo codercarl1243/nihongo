@@ -2,6 +2,8 @@
 
 import { Fragment } from 'react';
 
+// Echo: Suppressing is emitted by the backend but intentionally omitted from this
+// display — it's an internal AudioManager detail, not a user-visible pipeline step.
 const STAGES = [
     'VAD 1: Listening',
     'VAD 1: Speech Detected',
@@ -11,7 +13,9 @@ const STAGES = [
     'TTS: Synthesizing',
     'VAD 2: Barge-In Detected',
     'Audio: Playing',
+    'LLM: Classifying',
     'DB: Writing',
+    'LLM: Compacting',
 ] as const;
 
 interface PipelineFlowProps {

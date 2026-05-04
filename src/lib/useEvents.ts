@@ -55,6 +55,10 @@ export default function useEvents() {
                     addMessage('system', `Error: ${e.payload.message}`);
                     setSessionStatus('idle');
                 }),
+                listen<{ text: string }>('system_message', (e) => {
+                    console.log("[backend] system_message:", e);
+                    addMessage('system', e.payload.text);
+                }),
                 listen<{ stage: string }>('pipeline_status', (e) => { // [PIPELINE_DEBUG]
                     setPipelineStage(e.payload.stage);                  // [PIPELINE_DEBUG]
                 }),                                                       // [PIPELINE_DEBUG]
