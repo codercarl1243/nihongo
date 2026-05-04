@@ -38,6 +38,13 @@ impl TutorSession {
         self.token_estimate += token_estimate(transcript);
     }
 
+    /// Inject an assistant message without recording a DB turn.
+    /// Used to seed the greeting into history so the model doesn't re-greet.
+    pub fn push_assistant(&mut self, text: &str) {
+        self.messages.push(ChatMessage::assistant(text));
+        self.token_estimate += token_estimate(text);
+    }
+
     /// Persist the completed turn and append the assistant message.
     /// Returns `true` when the context has crossed the compaction threshold.
     pub fn record_turn_sync(

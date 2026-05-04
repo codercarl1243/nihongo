@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::time::{Duration, Instant};
 use std::thread;
 
@@ -40,15 +40,22 @@ pub struct AudioStreams {
 }
 
 pub struct AudioManager {
-    is_running: Arc<AtomicBool>,
-    muted:      Arc<AtomicBool>,
+    is_running:           Arc<AtomicBool>,
+    muted:                Arc<AtomicBool>,
+    barge_in:             Arc<AtomicBool>,
+    silence_threshold_ms: Arc<AtomicU64>,
+    silence_default_ms:   Arc<AtomicU64>,
 }
 
 impl AudioManager {
     pub fn new() -> Self {
+        let default_ms = EngineConfig::default().silence_threshold.as_millis() as u64;
         Self {
-            is_running: Arc::new(AtomicBool::new(false)),
-            muted:      Arc::new(AtomicBool::new(false)),
+            is_running:           Arc::new(AtomicBool::new(false)),
+            muted:                Arc::new(AtomicBool::new(false)),
+            barge_in:             Arc::new(AtomicBool::new(false)),
+            silence_threshold_ms: Arc::new(AtomicU64::new(default_ms)),
+            silence_default_ms:   Arc::new(AtomicU64::new(default_ms)),
         }
     }
 
@@ -64,6 +71,30 @@ impl AudioManager {
     /// Resume capture after TTS playback finishes.
     pub fn unmute(&self) {
         self.muted.store(false, Ordering::SeqCst);
+    }
+
+    /// Store the session-level silence threshold derived from learner level.
+    /// Also sets the current threshold so the loop picks it up immediately.
+    pub fn init_silence_threshold(&self, ms: u64) {
+        self.silence_default_ms.store(ms, Ordering::SeqCst);
+        self.silence_threshold_ms.store(ms, Ordering::SeqCst);
+    }
+
+    /// Temporarily tighten the threshold — e.g. 500ms for drill prompts.
+    pub fn set_silence_threshold(&self, ms: u64) {
+        self.silence_threshold_ms.store(ms, Ordering::SeqCst);
+    }
+
+    /// Reset to the session-level default set by `init_silence_threshold`.
+    pub fn reset_silence_threshold(&self) {
+        let default = self.silence_default_ms.load(Ordering::SeqCst);
+        self.silence_threshold_ms.store(default, Ordering::SeqCst);
+    }
+
+    /// Returns `true` (and clears the flag) if speech was detected during TTS
+    /// playback, signalling the pipeline to stop the player early.
+    pub fn barge_in_pending(&self) -> bool {
+        self.barge_in.swap(false, Ordering::SeqCst)
     }
 
     pub fn stop(&self) -> Result<()> {
@@ -83,11 +114,13 @@ impl AudioManager {
         let (turn_tx, turn_rx) = mpsc::channel::<Vec<f32>>(8);
 
         self.is_running.store(true, Ordering::SeqCst);
-        let running = self.is_running.clone();
-        let muted   = self.muted.clone();
+        let running      = self.is_running.clone();
+        let muted        = self.muted.clone();
+        let barge_in     = self.barge_in.clone();
+        let threshold_ms = self.silence_threshold_ms.clone();
 
         thread::spawn(move || {
-            if let Err(e) = Self::run_loop(partial_tx, turn_tx, running, muted, config) {
+            if let Err(e) = Self::run_loop(partial_tx, turn_tx, running, muted, barge_in, threshold_ms, config) {
                 eprintln!("[manager] loop error: {}", e);
             }
         });
@@ -103,6 +136,8 @@ impl AudioManager {
         turn_tx: mpsc::Sender<Vec<f32>>,
         running: Arc<AtomicBool>,
         muted: Arc<AtomicBool>,
+        barge_in: Arc<AtomicBool>,
+        threshold_ms: Arc<AtomicU64>,
         config: EngineConfig,
     ) -> Result<()> {
         let (capture, mut consumer) = AudioCapture::start()?;
@@ -164,6 +199,8 @@ impl AudioManager {
                         if !barge_in_turn {
                             barge_in_turn = true;
                             barge_buffer.clear();
+                            // Signal the pipeline to stop TTS early.
+                            barge_in.store(true, Ordering::SeqCst);
                         }
                         barge_buffer.extend_from_slice(chunk);
                     } else if barge_in_turn {
@@ -219,7 +256,7 @@ impl AudioManager {
                     // so the full utterance includes trailing context.
                     speech_buffer.extend_from_slice(chunk);
 
-                    if last_voice.elapsed() > config.silence_threshold {
+                    if last_voice.elapsed() > Duration::from_millis(threshold_ms.load(Ordering::SeqCst)) {
                         // Turn ended — send the complete utterance.
                         let full_audio = std::mem::take(&mut speech_buffer);
                         samples_emitted_as_partial = 0;

@@ -41,6 +41,8 @@ struct ResponseDoneEvent  { full_response: String, milestone: bool, prompt_token
 struct SessionReadyEvent  { greeting: String }
 #[derive(Clone, Serialize)]
 struct ErrorEvent         { message: String }
+#[derive(Clone, Serialize)]
+struct MicStatusEvent     { active: bool }
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -61,16 +63,18 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
         match db.session_context().map(|c| c.profile.current_level).unwrap_or(5) {
             1 | 2 => 700,  // N1/N2 — near-native pacing
             3     => 900,  // N3 — intermediate
-            _     => 1200, // N4/N5 — beginner
+            _     => 1200, // N4/N5 — beginner; learners need time to retrieve words
         }
     };
 
+    {
+        let mut audio = state.audio.lock().unwrap();
+        audio.init_silence_threshold(silence_ms);
+    }
+
     let streams = state.audio
         .lock().unwrap()
-        .start(EngineConfig {
-            silence_threshold: Duration::from_millis(silence_ms),
-            ..EngineConfig::default()
-        })
+        .start(EngineConfig::default())
         .map_err(|e| e.to_string())?;
 
     state.player.lock().unwrap().start().map_err(|e| e.to_string())?;
@@ -156,11 +160,26 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
 
     state.audio.lock().unwrap().mute();
     state.player.lock().unwrap().resume();
-    let wav = state.llm.speak(greeting).await?;
-    let pcm = wav_to_f32(&wav)?;
-    state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
-    let duration = Duration::from_secs_f64(pcm.len() as f64 / 24_000.0);
+
+    let tts_result = async {
+        let wav = state.llm.speak(greeting).await?;
+        let pcm = wav_to_f32(&wav)?;
+        let len = pcm.len();
+        state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
+        Ok::<usize, anyhow::Error>(len)
+    }.await;
+
+    // Always open the mic — even if TTS failed — so the session isn't left muted.
+    state.audio.lock().unwrap().unmute();
+
+    let pcm_len = tts_result?;
+    let duration = Duration::from_secs_f64(pcm_len as f64 / 24_000.0);
     wait_for_playback(&state, duration).await;
+
+    // Seed greeting into history so the LLM doesn't re-greet on the first turn.
+    if let Some(ref mut s) = *state.session.lock().unwrap() {
+        s.push_assistant(greeting);
+    }
 
     app.emit("response_done", ResponseDoneEvent {
         full_response: greeting.to_string(),
@@ -168,8 +187,28 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
         prompt_tokens: 0,
     })?;
     app.emit("session_ready", SessionReadyEvent { greeting: greeting.to_string() })?;
+    app.emit("mic_status", MicStatusEvent { active: true })?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Returns true when the tutor's response is asking the student to produce a
+/// specific short phrase — drill context where a 500ms silence threshold is
+/// appropriate rather than the level-based default.
+fn is_drill_prompt(response: &str) -> bool {
+    let r = response.to_lowercase();
+    r.contains("try say")
+        || r.contains("can you say")
+        || r.contains("try using")
+        || r.contains("how do you say")
+        || r.contains("say that")
+        || r.contains("repeat")
+        || r.contains("言ってみて")
+        || r.contains("言えますか")
 }
 
 // ---------------------------------------------------------------------------
@@ -194,6 +233,9 @@ async fn handle_turn(
         return Ok(());
     }
     app.emit("transcript", TranscriptEvent { text: transcript.clone() })?;
+    // User's turn is received — show thinking state immediately rather than
+    // leaving the mic indicator on "Listening" through the whole pipeline.
+    app.emit("mic_status", MicStatusEvent { active: false }).ok();
 
     // ── 2. Append user turn, snapshot history ────────────────────────────────
     // Lock acquired and dropped before any await.
@@ -234,19 +276,40 @@ async fn handle_turn(
         Ok::<(String, ChatUsage), anyhow::Error>((full, usage))
     });
 
-    let mut muted         = false;
     let mut total_samples = 0usize;
-    while let Some(sentence) = sentence_rx.recv().await {
-        if !muted {
-            state.audio.lock().unwrap().mute();
-            state.player.lock().unwrap().resume();
-            muted = true;
+    let mut tts_started   = false;
+
+    // Run TTS loop inside an async block so unmute() is guaranteed to fire
+    // even if speak() returns an error mid-stream.
+    let tts_result = async {
+        while let Some(sentence) = sentence_rx.recv().await {
+            if !tts_started {
+                state.audio.lock().unwrap().mute();
+                state.player.lock().unwrap().resume();
+                tts_started = true;
+            }
+            // User spoke during TTS — stop queuing sentences and let the
+            // barge-in flush the player buffer.
+            if state.audio.lock().unwrap().barge_in_pending() {
+                state.player.lock().unwrap().stop();
+                break;
+            }
+            let wav = llm.speak(&sentence).await?;
+            let pcm = wav_to_f32(&wav)?;
+            total_samples += pcm.len();
+            state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
         }
-        let wav = llm.speak(&sentence).await?;
-        let pcm = wav_to_f32(&wav)?;
-        total_samples += pcm.len();
-        state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
+        Ok::<(), anyhow::Error>(())
+    }.await;
+
+    // Reopen the mic — always, even on TTS error — so the session is never
+    // left in a permanently muted state.
+    if tts_started {
+        state.audio.lock().unwrap().unmute();
+        app.emit("mic_status", MicStatusEvent { active: true }).ok();
     }
+
+    tts_result?;
 
     let (full_text, usage) = llm_task.await??;
     let tutor_resp = parse_response_pub(&full_text);
@@ -255,6 +318,15 @@ async fn handle_turn(
         milestone: tutor_resp.milestone,
         prompt_tokens: usage.prompt_tokens,
     })?;
+
+    // Adjust silence threshold for the next turn based on what the tutor just said.
+    // Drill prompts expect a short specific phrase → tighten to 500ms.
+    // Open questions / conversation → reset to the level-appropriate default.
+    if is_drill_prompt(&full_text) {
+        state.audio.lock().unwrap().set_silence_threshold(500);
+    } else {
+        state.audio.lock().unwrap().reset_silence_threshold();
+    }
 
     // ── 4. Persist turn (sync, lock dropped before await) ───────────────────
     let needs_compact: bool = {
@@ -283,19 +355,16 @@ async fn handle_turn(
         compact_context(app, llm).await?;
     }
 
-    // ── Wait for all queued audio / unmute ───────────────────────────────────
+    // ── Wait for all queued audio ────────────────────────────────────────────
     if total_samples > 0 {
         let duration = Duration::from_secs_f64(total_samples as f64 / 24_000.0);
         wait_for_playback(&state, duration).await;
-    } else {
-        state.audio.lock().unwrap().unmute();
     }
 
     Ok(())
 }
 
 /// Sleeps for `duration`, polling every 50ms for a barge-in (player stopped).
-/// Unmutes capture when done or barged in.
 async fn wait_for_playback(state: &AppState, duration: Duration) {
     let step        = Duration::from_millis(50);
     let mut elapsed = Duration::ZERO;
@@ -306,9 +375,11 @@ async fn wait_for_playback(state: &AppState, duration: Duration) {
         if state.player.lock().unwrap().is_stopped() {
             break;
         }
+        if state.audio.lock().unwrap().barge_in_pending() {
+            state.player.lock().unwrap().stop();
+            break;
+        }
     }
-
-    state.audio.lock().unwrap().unmute();
 }
 
 /// Build a summary, save it, then reset the session context.
