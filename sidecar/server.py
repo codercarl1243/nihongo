@@ -42,8 +42,9 @@ async def startup():
 # ---------------------------------------------------------------------------
 
 class TranscribeRequest(BaseModel):
-    audio_b64: str           # base64-encoded little-endian f32 PCM at 16kHz mono
-    language: str | None = None  # None = Whisper auto-detects per utterance
+    audio_b64: str                  # base64-encoded little-endian f32 PCM at 16kHz mono
+    language: str | None = None     # None = auto-detect per utterance
+    initial_prompt: str | None = None  # steers output language/script without forcing one
 
 
 class TranscribeResponse(BaseModel):
@@ -74,11 +75,13 @@ async def transcribe(req: TranscribeRequest):
     raw = base64.b64decode(req.audio_b64)
     audio = np.frombuffer(raw, dtype=np.float32).copy()
     loop = asyncio.get_event_loop()
-    transcript = await loop.run_in_executor(_ml_executor, _run_asr, audio, req.language)
+    transcript = await loop.run_in_executor(
+        _ml_executor, _run_asr, audio, req.language, req.initial_prompt
+    )
     return TranscribeResponse(transcript=transcript.strip())
 
 
-def _run_asr(audio: np.ndarray, language: str | None) -> str:
+def _run_asr(audio: np.ndarray, language: str | None, initial_prompt: str | None) -> str:
     """Blocking ASR inference — runs on _ml_executor so MLX streams match."""
     import mlx.core as mx
     from mlx_audio.stt.generate import generate_transcription
@@ -87,6 +90,8 @@ def _run_asr(audio: np.ndarray, language: str | None) -> str:
     kwargs = {"task": "transcribe"}
     if language is not None:
         kwargs["language"] = language
+    if initial_prompt is not None:
+        kwargs["initial_prompt"] = initial_prompt
     segments = generate_transcription(model=asr_model, audio=audio_mx, **kwargs)
     if segments is None:
         return ""
