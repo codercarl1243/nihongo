@@ -186,13 +186,21 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
         Ok::<usize, anyhow::Error>(len)
     }.await;
 
-    // Always open the mic — even if TTS failed — so the session isn't left muted.
-    state.audio.lock().unwrap().unmute();
-
+    // On TTS error: unmute immediately so the session isn't left permanently muted.
+    if tts_result.is_err() {
+        state.audio.lock().unwrap().unmute();
+    }
     let pcm_len = tts_result?;
+
+    // Keep mic muted through playback — unmuting early lets the 400ms echo
+    // suppression expire while audio is still playing, causing the greeting to
+    // be picked up by the mic and transcribed as user speech.
     app.emit("pipeline_status", PipelineStatusEvent { stage: "Audio: Playing".into() }).ok(); // [PIPELINE_DEBUG]
     let duration = Duration::from_secs_f64(pcm_len as f64 / 24_000.0);
     wait_for_playback(&state, duration).await;
+
+    // Unmute only after audio has finished playing.
+    state.audio.lock().unwrap().unmute();
 
     // Seed greeting into history so the LLM doesn't re-greet on the first turn.
     if let Some(ref mut s) = *state.session.lock().unwrap() {
@@ -322,9 +330,10 @@ async fn handle_turn(
         Ok::<(), anyhow::Error>(())
     }.await;
 
-    // Reopen the mic — always, even on TTS error — so the session is never
-    // left in a permanently muted state.
-    if tts_started {
+    // On TTS error: unmute immediately so the session is never left permanently muted.
+    // On success: unmute is deferred until after wait_for_playback (see below) so the
+    // audio doesn't get picked up by the mic and re-transcribed as user speech.
+    if tts_started && tts_result.is_err() {
         state.audio.lock().unwrap().unmute();
         app.emit("mic_status", MicStatusEvent { active: true }).ok();
     }
@@ -354,10 +363,18 @@ async fn handle_turn(
             .unwrap_or((false, false))
     });
 
-    // ── Wait for all queued audio ────────────────────────────────────────────
+    // ── Wait for all queued audio, then unmute ───────────────────────────────
+    // Unmuting before wait_for_playback lets the 400ms echo suppression window
+    // expire while audio is still playing, causing the TTS output to be captured
+    // by the mic and re-transcribed as user speech. Unmuting after playback means
+    // the suppression window only needs to cover actual room reverb (~50–100ms).
     if total_samples > 0 {
         let duration = Duration::from_secs_f64(total_samples as f64 / 24_000.0);
         wait_for_playback(&state, duration).await;
+    }
+    if tts_started {
+        state.audio.lock().unwrap().unmute();
+        app.emit("mic_status", MicStatusEvent { active: true }).ok();
     }
 
     app.emit("pipeline_status", PipelineStatusEvent { stage: "LLM: Classifying".into() }).ok(); // [PIPELINE_DEBUG]
