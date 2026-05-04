@@ -14,19 +14,16 @@
 //!
 //! ## Basic Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use audio_engine::{AudioManager, EngineConfig};
 //! use tokio_stream::StreamExt;
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let manager = AudioManager::new();
-//!     
-//!     // Use default configuration (600ms silence threshold)
-//!     let config = EngineConfig::default();
-//!     let mut turn_stream = manager.start(config)?;
+//!     let mut streams = manager.start(EngineConfig::default())?;
 //!
-//!     while let Some(audio_data) = turn_stream.next().await {
+//!     while let Some(audio_data) = streams.turn_end.next().await {
 //!         println!("Speech turn captured: {} samples", audio_data.len());
 //!     }
 //!

@@ -683,3 +683,221 @@ impl Db {
         Ok(Some(LessonSummary { id, session_id, notes, topics, vocabulary }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn in_memory() -> Db {
+        let conn = Connection::open_in_memory().unwrap();
+        let db = Db { conn };
+        db.migrate().unwrap();
+        db
+    }
+
+    // ── Learner profile ──────────────────────────────────────────────────────
+
+    #[test]
+    fn default_profile_is_n5() {
+        let db = in_memory();
+        let profile = db.learner_profile().unwrap();
+        assert_eq!(profile.current_level, 5);
+        assert_eq!(profile.target_level, 4);
+        assert_eq!(profile.total_words, 0);
+    }
+
+    // ── Sessions ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn start_and_end_session_succeeds() {
+        let db = in_memory();
+        let id = db.start_session().unwrap();
+        assert!(id > 0);
+        db.end_session(id).unwrap();
+    }
+
+    #[test]
+    fn record_turn_stores_input_and_response() {
+        let db = in_memory();
+        let session_id = db.start_session().unwrap();
+        let turn_id = db.record_turn(session_id, "こんにちは", "いい天気ですね", false).unwrap();
+        assert!(turn_id > 0);
+    }
+
+    // ── Vocabulary ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn upsert_vocabulary_returns_stable_id() {
+        let db = in_memory();
+        let entry = VocabEntry { id: 0, word: "猫".into(), reading: Some("ねこ".into()), meaning: Some("cat".into()), jlpt_level: Some(5) };
+        let id1 = db.upsert_vocabulary(&entry).unwrap();
+        let id2 = db.upsert_vocabulary(&entry).unwrap();
+        assert_eq!(id1, id2, "upsert on duplicate should return same id");
+    }
+
+    #[test]
+    fn introduce_word_creates_student_vocab_and_srs_entry() {
+        let db = in_memory();
+        let entry = VocabEntry { id: 0, word: "犬".into(), reading: None, meaning: Some("dog".into()), jlpt_level: Some(5) };
+        let vocab_id = db.upsert_vocabulary(&entry).unwrap();
+        db.introduce_word(vocab_id).unwrap();
+
+        // student_vocabulary row should exist
+        let sv_count: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM student_vocabulary WHERE vocabulary_id = ?1",
+            params![vocab_id], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(sv_count, 1);
+
+        // srs_schedule row should exist
+        let srs_count: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM srs_schedule WHERE item_type = 'vocabulary' AND item_id = ?1",
+            params![vocab_id], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(srs_count, 1);
+    }
+
+    #[test]
+    fn introduce_word_is_idempotent() {
+        let db = in_memory();
+        let entry = VocabEntry { id: 0, word: "魚".into(), reading: None, meaning: Some("fish".into()), jlpt_level: Some(5) };
+        let vocab_id = db.upsert_vocabulary(&entry).unwrap();
+        db.introduce_word(vocab_id).unwrap();
+        db.introduce_word(vocab_id).unwrap(); // second call must not error or duplicate
+        let count: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM student_vocabulary WHERE vocabulary_id = ?1",
+            params![vocab_id], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    // ── SRS scheduling ───────────────────────────────────────────────────────
+
+    #[test]
+    fn newly_introduced_word_is_not_immediately_due() {
+        let db = in_memory();
+        let entry = VocabEntry { id: 0, word: "山".into(), reading: None, meaning: Some("mountain".into()), jlpt_level: Some(5) };
+        let vocab_id = db.upsert_vocabulary(&entry).unwrap();
+        db.introduce_word(vocab_id).unwrap();
+        let due = db.vocabulary_due_for_review(10).unwrap();
+        assert!(due.is_empty(), "word due tomorrow should not appear in today's review");
+    }
+
+    #[test]
+    fn overdue_word_appears_in_review() {
+        let db = in_memory();
+        let entry = VocabEntry { id: 0, word: "川".into(), reading: None, meaning: Some("river".into()), jlpt_level: Some(5) };
+        let vocab_id = db.upsert_vocabulary(&entry).unwrap();
+        db.introduce_word(vocab_id).unwrap();
+        // Backdate the due_at so the word is overdue.
+        db.conn.execute(
+            "UPDATE srs_schedule SET due_at = datetime('now', '-1 day') WHERE item_id = ?1",
+            params![vocab_id],
+        ).unwrap();
+        let due = db.vocabulary_due_for_review(10).unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].word, "川");
+    }
+
+    #[test]
+    fn correct_answer_increases_fluency_and_srs_interval() {
+        let db = in_memory();
+        let entry = VocabEntry { id: 0, word: "空".into(), reading: None, meaning: Some("sky".into()), jlpt_level: Some(5) };
+        let vocab_id = db.upsert_vocabulary(&entry).unwrap();
+        db.introduce_word(vocab_id).unwrap();
+        db.update_word_fluency(vocab_id, true).unwrap();
+
+        let fluency: u8 = db.conn.query_row(
+            "SELECT fluency_level FROM student_vocabulary WHERE vocabulary_id = ?1",
+            params![vocab_id], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(fluency, 1);
+
+        let interval: f64 = db.conn.query_row(
+            "SELECT interval_days FROM srs_schedule WHERE item_id = ?1",
+            params![vocab_id], |r| r.get(0),
+        ).unwrap();
+        assert!(interval > 1.0, "interval should increase after correct answer");
+    }
+
+    #[test]
+    fn incorrect_answer_decreases_fluency_and_resets_interval() {
+        let db = in_memory();
+        let entry = VocabEntry { id: 0, word: "海".into(), reading: None, meaning: Some("sea".into()), jlpt_level: Some(5) };
+        let vocab_id = db.upsert_vocabulary(&entry).unwrap();
+        db.introduce_word(vocab_id).unwrap();
+        // First get fluency to 2 so a decrease is measurable.
+        db.update_word_fluency(vocab_id, true).unwrap();
+        db.update_word_fluency(vocab_id, true).unwrap();
+        db.update_word_fluency(vocab_id, false).unwrap();
+
+        let fluency: u8 = db.conn.query_row(
+            "SELECT fluency_level FROM student_vocabulary WHERE vocabulary_id = ?1",
+            params![vocab_id], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(fluency, 1);
+
+        let interval: f64 = db.conn.query_row(
+            "SELECT interval_days FROM srs_schedule WHERE item_id = ?1",
+            params![vocab_id], |r| r.get(0),
+        ).unwrap();
+        assert!((interval - 1.0).abs() < 0.01, "interval should reset to 1 after incorrect answer");
+    }
+
+    // ── Vocabulary scanning ──────────────────────────────────────────────────
+
+    #[test]
+    fn find_vocab_in_text_matches_words_present_in_topic() {
+        let db = in_memory();
+        // Grab the first seeded topic id.
+        let topic_id: i64 = db.conn
+            .query_row("SELECT id FROM topics ORDER BY id LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        // Grab one vocabulary word from that topic.
+        let word: String = db.conn
+            .query_row(
+                "SELECT v.word FROM vocabulary v
+                 JOIN topic_vocabulary tv ON tv.vocabulary_id = v.id
+                 WHERE tv.topic_id = ?1 LIMIT 1",
+                params![topic_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let hits = db.find_vocab_in_text(&word, topic_id).unwrap();
+        assert!(!hits.is_empty(), "should find {:?} in its own topic vocabulary", word);
+    }
+
+    #[test]
+    fn find_vocab_in_text_returns_empty_for_irrelevant_text() {
+        let db = in_memory();
+        let topic_id: i64 = db.conn
+            .query_row("SELECT id FROM topics ORDER BY id LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        let hits = db.find_vocab_in_text("xyzzy", topic_id).unwrap();
+        assert!(hits.is_empty());
+    }
+
+    // ── Lesson summaries ─────────────────────────────────────────────────────
+
+    #[test]
+    fn save_and_retrieve_lesson_summary() {
+        let db = in_memory();
+        let summary = LessonSummary {
+            id: 0,
+            session_id: None,
+            notes: "Practised greetings.".into(),
+            topics: vec![],
+            vocabulary: vec![],
+        };
+        db.save_lesson_summary(&summary).unwrap();
+        let retrieved = db.latest_lesson_summary().unwrap().unwrap();
+        assert_eq!(retrieved.notes, "Practised greetings.");
+    }
+
+    #[test]
+    fn latest_lesson_summary_returns_none_when_empty() {
+        let db = in_memory();
+        assert!(db.latest_lesson_summary().unwrap().is_none());
+    }
+}

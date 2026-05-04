@@ -127,3 +127,69 @@ pub fn parse_summary_pub(raw: &str) -> LessonSummary {
 fn token_estimate(text: &str) -> usize {
     text.len().saturating_div(CHARS_PER_TOKEN).max(1)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_summary_pub ────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_summary_extracts_notes_from_valid_json() {
+        let raw = r#"{"notes": "Student practised greetings."}"#;
+        let summary = parse_summary_pub(raw);
+        assert_eq!(summary.notes, "Student practised greetings.");
+    }
+
+    #[test]
+    fn parse_summary_handles_json_with_surrounding_text() {
+        let raw = "Here is the summary:\n{\"notes\": \"Worked on て-form.\"}\nEnd.";
+        let summary = parse_summary_pub(raw);
+        assert_eq!(summary.notes, "Worked on て-form.");
+    }
+
+    #[test]
+    fn parse_summary_falls_back_to_raw_text_on_invalid_json() {
+        let raw = "No JSON here at all.";
+        let summary = parse_summary_pub(raw);
+        assert_eq!(summary.notes, "No JSON here at all.");
+    }
+
+    #[test]
+    fn parse_summary_truncates_long_fallback_to_500_chars() {
+        let raw = "x".repeat(600);
+        let summary = parse_summary_pub(&raw);
+        assert_eq!(summary.notes.len(), 500);
+    }
+
+    // ── parse_response_pub ───────────────────────────────────────────────────
+
+    #[test]
+    fn parse_response_trims_whitespace() {
+        let resp = parse_response_pub("  こんにちは！  ");
+        assert_eq!(resp.response, "こんにちは！");
+    }
+
+    #[test]
+    fn parse_response_sets_milestone_false() {
+        let resp = parse_response_pub("anything");
+        assert!(!resp.milestone);
+    }
+
+    // ── token_estimate ───────────────────────────────────────────────────────
+
+    #[test]
+    fn token_estimate_empty_string_returns_one() {
+        assert_eq!(token_estimate(""), 1);
+    }
+
+    #[test]
+    fn token_estimate_four_chars_is_one_token() {
+        assert_eq!(token_estimate("abcd"), 1);
+    }
+
+    #[test]
+    fn token_estimate_scales_with_length() {
+        assert_eq!(token_estimate("a".repeat(400).as_str()), 100);
+    }
+}

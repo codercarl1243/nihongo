@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:pipeline": "bash scripts/test-pipeline.sh"
+    "test:pipeline": "bash scripts/test-pipeline.sh",
+    "test:integration": "bash scripts/test-integration.sh"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.100.6",

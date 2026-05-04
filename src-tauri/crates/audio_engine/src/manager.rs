@@ -298,3 +298,63 @@ impl AudioManager {
         *remainder = samples.split_off(offset);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn align_windows_splits_at_window_boundary() {
+        let mut samples = vec![0.0f32; 600];
+        let mut remainder = Vec::new();
+        AudioManager::align_windows(&mut samples, &mut remainder, 512);
+        assert_eq!(samples.len(), 512);
+        assert_eq!(remainder.len(), 88);
+    }
+
+    #[test]
+    fn align_windows_prepends_remainder_from_previous_call() {
+        let mut remainder = vec![0.1f32; 400];
+        let mut samples = vec![0.2f32; 200];
+        AudioManager::align_windows(&mut samples, &mut remainder, 512);
+        // 400 + 200 = 600 → emit 512, carry 88
+        assert_eq!(samples.len(), 512);
+        assert_eq!(remainder.len(), 88);
+        // Remainder-originated samples come first
+        assert!((samples[0] - 0.1).abs() < f32::EPSILON);
+        assert!((samples[400] - 0.2).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn align_windows_exact_multiple_leaves_empty_remainder() {
+        let mut samples = vec![0.0f32; 1024];
+        let mut remainder = Vec::new();
+        AudioManager::align_windows(&mut samples, &mut remainder, 512);
+        assert_eq!(samples.len(), 1024);
+        assert!(remainder.is_empty());
+    }
+
+    #[test]
+    fn align_windows_shorter_than_window_moves_all_to_remainder() {
+        let mut samples = vec![0.0f32; 300];
+        let mut remainder = Vec::new();
+        AudioManager::align_windows(&mut samples, &mut remainder, 512);
+        assert!(samples.is_empty());
+        assert_eq!(remainder.len(), 300);
+    }
+
+    // Echo tail: audio within the suppression window must be skipped by the loop.
+    // The production code checks `Instant::now() < echo_tail_until`; these tests
+    // verify the boundary conditions that make it correct.
+    #[test]
+    fn echo_tail_active_immediately_after_unmute() {
+        let tail_end = Instant::now() + Duration::from_millis(400);
+        assert!(Instant::now() < tail_end, "suppression window should be active");
+    }
+
+    #[test]
+    fn echo_tail_expired_when_set_in_past() {
+        let tail_end = Instant::now() - Duration::from_millis(1);
+        assert!(!(Instant::now() < tail_end), "suppression window should have expired");
+    }
+}

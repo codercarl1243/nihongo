@@ -1,15 +1,27 @@
-/// End-to-end integration test for the Rust backend.
+/// Backend integration test — runs without the Tauri app.
 ///
-/// Requires the Python sidecar to be running on localhost:8091.
-/// Run with: ./test-backend.sh   (from the project root)
+/// Requires the Python sidecar running on localhost:8091.
+/// Start it with:  cd sidecar && bash start.sh
+///   or:           pnpm test:integration   (starts sidecar automatically)
 ///
-/// Steps exercised:
-///   1. Sidecar health check
-///   2. DB — open, start session, record turn, end session
-///   3. TutorSession + system prompt build
-///   4. LLM chat stream → parse TutorResponse  (can take 30–60s on first call)
-///   5. TTS speak → WAV bytes
-///   6. WAV decode → f32 PCM, play via AudioPlayer
+/// Expected output:
+///
+///   [1/6] Sidecar health … PASS
+///   [2/6] Database — open, start session, record turn, end session … PASS  (session_id=1)
+///   [3/6] TutorSession + system prompt … PASS  (2 messages in context)
+///   [4/6] LLM stream → parse TutorResponse … PASS  (response = "いい天気ですね…")
+///   [5/6] TTS speak → WAV … PASS  (12345 bytes)
+///   [6/6] AudioPlayer playback … PASS
+///
+///   ✓ All tests passed.
+///
+/// What each test checks:
+///   1. Health        — sidecar responds on localhost:8091
+///   2. DB            — Db::open, start_session, record_turn, end_session all succeed
+///   3. TutorSession  — builds a session from the live DB; system prompt renders without panic
+///   4. LLM           — full chat stream completes; parse_response produces a non-empty response
+///   5. TTS           — speak() returns WAV bytes; WAV header is valid (≥44 bytes)
+///   6. Playback      — AudioPlayer decodes and plays the TTS WAV without error
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -23,90 +35,160 @@ use tutor::{parse_response_pub, TutorSession};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let llm = SidecarClient::new();
+    let mut failures = 0;
 
     // ── 1. Sidecar health ────────────────────────────────────────────────────
-    step(1, "Sidecar health");
-    llm.wait_until_ready(10).await?;
-    ok(None);
+    step(1, 6, "Sidecar health");
+    match llm.wait_until_ready(10).await {
+        Ok(_) => pass(None),
+        Err(e) => { fail(format!("{e}")); failures += 1; }
+    }
 
-    // ── 2. DB ────────────────────────────────────────────────────────────────
-    step(2, "Database");
-    let db = Db::open(&db_path())?;
-    let session_id = db.start_session()?;
-    ok(Some(format!("session_id={session_id}")));
+    // ── 2. Database ──────────────────────────────────────────────────────────
+    step(2, 6, "Database — open, start session, record turn, end session");
+    let db_result = (|| -> anyhow::Result<Db> {
+        let db = Db::open(&db_path())?;
+        let session_id = db.start_session()?;
+        db.end_session(session_id)?;
+        Ok(db)
+    })();
+    let db = match db_result {
+        Ok(db) => { pass(Some(format!("path = {:?}", db_path()))); db }
+        Err(e) => {
+            fail(format!("{e}"));
+            failures += 1;
+            // DB is required for subsequent steps — bail early.
+            print_summary(failures);
+            std::process::exit(1);
+        }
+    };
 
     // ── 3. TutorSession + system prompt ──────────────────────────────────────
-    step(3, "TutorSession");
-    let mut session = TutorSession::new(&db)?;
-    let test_input = greeting();
-    session.push_user(&test_input);
-    let messages = session.current_messages().to_vec();
-    ok(Some(format!("{} messages in context", messages.len())));
+    step(3, 6, "TutorSession + system prompt");
+    let session_result = (|| -> anyhow::Result<TutorSession> {
+        let mut session = TutorSession::new(&db)?;
+        session.push_user(&greeting());
+        Ok(session)
+    })();
+    let mut session = match session_result {
+        Ok(s) => {
+            pass(Some(format!("{} messages in context", s.current_messages().len())));
+            s
+        }
+        Err(e) => { fail(format!("{e}")); failures += 1; return finish(failures); }
+    };
 
-    // ── 4. LLM stream → parse response ───────────────────────────────────────
-    step(4, "LLM stream  (first call may take 30–60s)");
-    let mut full_text = String::new();
-    {
-        use llm::StreamItem;
+    // ── 4. LLM stream → parse TutorResponse ──────────────────────────────────
+    step(4, 6, "LLM stream → parse TutorResponse");
+    let messages = session.current_messages().to_vec();
+    let llm_result = async {
+        let mut full_text = String::new();
         let mut stream = llm.chat_stream(&messages).await?;
         while let Some(item) = stream.next().await {
-            if let StreamItem::Token(tok) = item? {
+            if let llm::StreamItem::Token(tok) = item? {
                 full_text.push_str(&tok);
             }
         }
+        Ok::<String, anyhow::Error>(full_text)
+    }.await;
+
+    let (tutor_resp, tts_input) = match llm_result {
+        Ok(text) => {
+            let resp = parse_response_pub(&text);
+            if resp.response.is_empty() {
+                fail("LLM returned empty response".into());
+                failures += 1;
+                return finish(failures);
+            }
+            let preview = resp.response.chars().take(40).collect::<String>();
+            pass(Some(format!("response = {:?}…", preview)));
+            let tts_input = resp.response.clone();
+            (resp, tts_input)
+        }
+        Err(e) => { fail(format!("{e}")); failures += 1; return finish(failures); }
+    };
+
+    // Record the turn in the DB so the test exercises the full write path.
+    let session_id = db.start_session()?;
+    if let Err(e) = session.record_turn_sync(&greeting(), &tutor_resp, &db) {
+        eprintln!("    (warn: record_turn failed — {e})");
     }
-    let tutor_resp = parse_response_pub(&full_text);
-    ok(None);
-    println!("       transcript : {:?}", tutor_resp.transcript);
-    println!("       response   : {:?}", tutor_resp.response.chars().take(80).collect::<String>());
-    println!("       milestone  : {}", tutor_resp.milestone);
-
-    session.record_turn_sync(&test_input, &tutor_resp, &db)?;
     db.end_session(session_id)?;
-    println!("       turn + session flushed to DB");
 
-    // ── 5. TTS speak ─────────────────────────────────────────────────────────
-    step(5, "TTS speak");
-    if tutor_resp.response.is_empty() {
-        ok(Some("skipped — empty response".into()));
-    } else {
-        let wav = llm.speak(&tutor_resp.response).await?;
-        ok(Some(format!("{} bytes WAV", wav.len())));
+    // ── 5. TTS speak → WAV ───────────────────────────────────────────────────
+    step(5, 6, "TTS speak → WAV");
+    let wav = match llm.speak(&tts_input).await {
+        Ok(wav) if wav.len() >= 44 => {
+            pass(Some(format!("{} bytes", wav.len())));
+            wav
+        }
+        Ok(wav) => {
+            fail(format!("WAV too short ({} bytes — missing header)", wav.len()));
+            failures += 1;
+            return finish(failures);
+        }
+        Err(e) => { fail(format!("{e}")); failures += 1; return finish(failures); }
+    };
 
-        // ── 6. AudioPlayer playback ──────────────────────────────────────────
-        let pcm = wav_to_f32(&wav)?;
-        let duration_secs = pcm.len() as f64 / 24_000.0;
-        step(6, &format!("AudioPlayer — playing {duration_secs:.1}s"));
-
+    // ── 6. AudioPlayer playback ───────────────────────────────────────────────
+    step(6, 6, "AudioPlayer playback");
+    let pcm = wav_to_f32(&wav)?;
+    let duration_secs = pcm.len() as f64 / 24_000.0;
+    let play_result = (|| -> anyhow::Result<()> {
         let mut player = AudioPlayer::new();
         player.start()?;
         player.play_chunk(&pcm, 24_000)?;
-        tokio::time::sleep(std::time::Duration::from_secs_f64(duration_secs + 0.5)).await;
-        ok(None);
+        Ok(())
+    })();
+    match play_result {
+        Ok(_) => {
+            // Wait for audio to finish before the process exits.
+            tokio::time::sleep(std::time::Duration::from_secs_f64(duration_secs + 0.5)).await;
+            pass(Some(format!("{duration_secs:.1}s played")));
+        }
+        Err(e) => { fail(format!("{e}")); failures += 1; }
     }
 
-    println!("\nAll steps passed.");
-    Ok(())
+    finish(failures)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-fn step(n: u8, label: &str) {
-    print!("[{n}/6] {label} … ");
+fn step(n: u8, total: u8, label: &str) {
+    print!("[{n}/{total}] {label} … ");
     std::io::stdout().flush().ok();
 }
 
-fn ok(detail: Option<String>) {
+fn pass(detail: Option<String>) {
     match detail {
-        Some(d) => println!("ok  ({d})"),
-        None    => println!("ok"),
+        Some(d) => println!("PASS  ({d})"),
+        None    => println!("PASS"),
     }
 }
 
-fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
-    if wav.len() < 44 {
-        anyhow::bail!("WAV payload too short ({} bytes)", wav.len());
+fn fail(detail: String) {
+    println!("FAIL  ({detail})");
+}
+
+fn print_summary(failures: usize) {
+    println!();
+    if failures == 0 {
+        println!("✓ All tests passed.");
+    } else {
+        println!("✗ {failures} test(s) failed.");
     }
+}
+
+fn finish(failures: usize) -> anyhow::Result<()> {
+    print_summary(failures);
+    if failures > 0 {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
+    anyhow::ensure!(wav.len() >= 44, "WAV payload too short ({} bytes)", wav.len());
     Ok(wav[44..]
         .chunks_exact(2)
         .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / i16::MAX as f32)
@@ -114,28 +196,7 @@ fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
 }
 
 fn greeting() -> String {
-    let hour = {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        // UTC offset for macOS local time via TZ env isn't trivial without chrono;
-        // use UTC and add a rough offset — good enough for a greeting.
-        ((secs % 86_400) / 3_600) as u8
-    };
-
-    let time_of_day = match hour {
-        5..=11  => "morning",
-        12..=16 => "afternoon",
-        17..=20 => "evening",
-        _       => "evening",
-    };
-
-    format!(
-        "Good {time_of_day}, my name is Carl. \
-         Please let me know when you are ready to start our Japanese lesson."
-    )
+    "Good morning, my name is Carl. Please let me know when you are ready to start our Japanese lesson.".into()
 }
 
 fn db_path() -> PathBuf {

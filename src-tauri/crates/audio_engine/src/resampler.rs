@@ -102,3 +102,101 @@ impl Resampler16k {
         Ok(mono_16k_out)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ringbuf::{HeapRb, traits::{Producer, Split}};
+    use std::f32::consts::PI;
+
+    fn make_resampler(input_hz: u32, channels: u16) -> Resampler16k {
+        Resampler16k::new(input_hz, channels).unwrap()
+    }
+
+    /// Push `n_frames` of interleaved samples into a fresh ring and return the consumer.
+    fn filled_consumer(samples: Vec<f32>) -> ringbuf::HeapCons<f32> {
+        let rb = HeapRb::<f32>::new(samples.len().max(1));
+        let (mut prod, cons) = rb.split();
+        prod.push_slice(&samples);
+        cons
+    }
+
+    #[test]
+    fn output_length_is_proportional_to_ratio() {
+        // 48kHz stereo → 16kHz mono: ratio = 1/3.
+        // We push 2× CHUNK_FRAMES (2048 stereo frames = 4096 samples) to guarantee
+        // at least one full chunk is processed even with rubato's sub_chunks=2 buffering.
+        let n_frames = 2048usize;
+        let channels = 2u16;
+        let input_hz = 48_000u32;
+        let samples = vec![0.0f32; n_frames * channels as usize];
+        let mut cons = filled_consumer(samples);
+        let mut r = make_resampler(input_hz, channels);
+        let out = r.process_available(&mut cons).unwrap();
+        let expected = (n_frames as f64 * TARGET_SAMPLE_RATE as f64 / input_hz as f64) as usize;
+        // Allow ±20 frames for rubato's internal rounding across sub-chunks.
+        assert!(
+            !out.is_empty(),
+            "should produce output for 2× chunk input"
+        );
+        assert!(
+            out.len() <= expected + 20,
+            "output ({}) should not exceed expected ({expected}) by more than 20 frames",
+            out.len()
+        );
+        assert!(
+            out.len() >= expected / 2,
+            "output ({}) should be at least half of expected ({expected})",
+            out.len()
+        );
+    }
+
+    #[test]
+    fn fewer_than_chunk_frames_produces_no_output() {
+        // CHUNK_FRAMES = 1024; pushing 512 frames should produce nothing yet.
+        let samples = vec![0.0f32; 512 * 2]; // 512 stereo frames
+        let mut cons = filled_consumer(samples);
+        let mut r = make_resampler(48_000, 2);
+        let out = r.process_available(&mut cons).unwrap();
+        assert!(out.is_empty(), "partial chunk should produce no output");
+    }
+
+    #[test]
+    fn mono_passthrough_preserves_dc_value() {
+        // 16kHz mono in, 16kHz mono out — output should closely match input amplitude.
+        let n_frames = 1024usize;
+        // DC signal at 0.5 amplitude.
+        let samples = vec![0.5f32; n_frames];
+        let mut cons = filled_consumer(samples);
+        let mut r = make_resampler(16_000, 1);
+        let out = r.process_available(&mut cons).unwrap();
+        assert!(!out.is_empty());
+        // Allow rubato's windowed sinc to deviate slightly at boundaries.
+        let mid = out.len() / 4;
+        let end = out.len() * 3 / 4;
+        for &s in &out[mid..end] {
+            assert!((s - 0.5).abs() < 0.05, "DC passthrough deviated: {s}");
+        }
+    }
+
+    #[test]
+    fn downsampled_sine_survives_frequency_check() {
+        // Generate a 440 Hz sine at 48kHz stereo and resample to 16kHz.
+        // The sine should still be detectable as a non-zero signal after resampling.
+        let input_hz = 48_000u32;
+        let n_frames = 4096usize;
+        let freq = 440.0f32;
+        let mut samples = Vec::with_capacity(n_frames * 2);
+        for i in 0..n_frames {
+            let v = (2.0 * PI * freq * i as f32 / input_hz as f32).sin();
+            samples.push(v); // L
+            samples.push(v); // R
+        }
+        let mut cons = filled_consumer(samples);
+        let mut r = make_resampler(input_hz, 2);
+        let out = r.process_available(&mut cons).unwrap();
+        assert!(!out.is_empty());
+        let rms = (out.iter().map(|s| s * s).sum::<f32>() / out.len() as f32).sqrt();
+        assert!(rms > 0.1, "resampled sine should have non-trivial RMS, got {rms}");
+    }
+}
