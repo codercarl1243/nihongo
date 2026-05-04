@@ -235,14 +235,17 @@ async fn handle_turn(
         }
     };
     let raw_transcript = llm.transcribe(&normalize_peak(&audio), Some(asr_language)).await?;
+    eprintln!("[asr] language={asr_language} raw={raw_transcript:?}");
 
     // For English-mode ASR (beginner learners), normalize any romanized Japanese
     // words the user deliberately spoke (e.g. "arigatou" → "ありがとう").
     let transcript = if asr_language == "en" {
-        llm.normalize_transcript(&raw_transcript).await.unwrap_or_else(|e| {
-            eprintln!("[handle_turn] normalize failed: {e}");
+        let normalized = llm.normalize_transcript(&raw_transcript).await.unwrap_or_else(|e| {
+            eprintln!("[normalize] failed: {e}");
             raw_transcript.clone()
-        })
+        });
+        eprintln!("[normalize] raw={raw_transcript:?} → normalized={normalized:?}");
+        normalized
     } else {
         raw_transcript
     };
