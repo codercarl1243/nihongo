@@ -233,6 +233,9 @@ async fn handle_turn(
     };
     let raw_transcript = llm.transcribe(&normalize_peak(&audio), None).await?;
     eprintln!("[asr] level={learner_level} raw={raw_transcript:?}");
+    if raw_transcript.trim().is_empty() {
+        return Ok(());
+    }
 
     // Normalize romaji to kana/kanji at the learner's level — beginners get
     // hiragana only, intermediate gets common kanji, advanced gets full kanji.
