@@ -6,6 +6,8 @@ import SessionButton from '../audioButton';
 export default function ChatWindow() {
     const { sessionStatus, messages, streamingText, scrollRef, start, stop } = useChat();
     const promptTokens = useAppStore((s) => s.promptTokens);
+    const micActive    = useAppStore((s) => s.micActive);
+    const isThinking   = useAppStore((s) => s.isThinking);
 
     return (
         <Stack gap="lg" className="chat-window pt-md">
@@ -30,6 +32,14 @@ export default function ChatWindow() {
 
                 <div ref={scrollRef} />
             </Stack>
+
+            {sessionStatus === 'ready' && (
+                <div className="session-indicators">
+                    <div className={`mic-indicator ${micActive ? 'listening' : 'suppressed'}`}>
+                        {micActive ? 'Listening' : isThinking ? 'Thinking…' : 'Speaking'}
+                    </div>
+                </div>
+            )}
 
             <SessionButton status={sessionStatus} onStart={start} onStop={stop} />
 

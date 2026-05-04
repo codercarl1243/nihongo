@@ -9,6 +9,8 @@ export default function useEvents() {
     const finalizeStream   = useAppStore((s) => s.finalizeStream);
     const setSessionStatus = useAppStore((s) => s.setSessionStatus);
     const setPromptTokens  = useAppStore((s) => s.setPromptTokens);
+    const setMicActive     = useAppStore((s) => s.setMicActive);
+    const setIsThinking    = useAppStore((s) => s.setIsThinking);
 
     useEffect(() => {
         // `cancelled` guards against the React StrictMode double-mount pattern:
@@ -29,13 +31,18 @@ export default function useEvents() {
                 }),
                 listen<{ text: string }>('transcript', (e) => {
                     console.log("[backend] transcript:", e);
-                    addMessage('user', e.payload.text)
-                }
-                ),
-                    listen<{ full_response: string; milestone: boolean; prompt_tokens: number }>('response_done', (e) =>{
+                    addMessage('user', e.payload.text);
+                    setIsThinking(true);
+                }),
+                listen<{ full_response: string; milestone: boolean; prompt_tokens: number }>('response_done', (e) => {
                     console.log("[backend] response_done:", e);
                     finalizeStream(e.payload.full_response);
                     setPromptTokens(e.payload.prompt_tokens);
+                    setIsThinking(false);
+                }),
+                listen<{ active: boolean }>('mic_status', (e) => {
+                    console.log("[backend] mic_status:", e.payload.active);
+                    setMicActive(e.payload.active);
                 }),
                 listen<{ greeting: string }>('session_ready', (e) =>{
                     console.log("[backend] session_ready:", e);
@@ -71,5 +78,5 @@ export default function useEvents() {
             cancelled = true;
             cleanup.forEach((fn) => fn());
         };
-    }, [addMessage, appendToken, finalizeStream, setSessionStatus, setPromptTokens]);
+    }, [addMessage, appendToken, finalizeStream, setSessionStatus, setPromptTokens, setMicActive, setIsThinking]);
 }

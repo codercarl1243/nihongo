@@ -13,12 +13,16 @@ type AppState = {
     messages: Message[];
     streamingText: string;
     promptTokens: number;
+    micActive: boolean;
+    isThinking: boolean;
 
     setSessionStatus: (status: SessionStatus) => void;
     addMessage: (sender: 'user' | 'tutor' | 'system', text: string) => void;
     appendToken: (token: string) => void;
     finalizeStream: (fullText: string) => void;
     setPromptTokens: (n: number) => void;
+    setMicActive: (active: boolean) => void;
+    setIsThinking: (thinking: boolean) => void;
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -26,6 +30,8 @@ export const useAppStore = create<AppState>((set) => ({
     messages: [],
     streamingText: '',
     promptTokens: 0,
+    micActive: false,
+    isThinking: false,
 
     setSessionStatus: (sessionStatus) => set({ sessionStatus }),
 
@@ -47,4 +53,6 @@ export const useAppStore = create<AppState>((set) => ({
         })),
 
     setPromptTokens: (promptTokens) => set({ promptTokens }),
+    setMicActive: (micActive) => set({ micActive }),
+    setIsThinking: (isThinking) => set({ isThinking }),
 }));
