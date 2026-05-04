@@ -22,6 +22,7 @@ struct AppState {
     db:             Mutex<Db>,
     session:        Mutex<Option<TutorSession>>,
     sidecar_ready:  AtomicBool,
+    last_tts:       Mutex<Option<String>>,
 }
 
 // Compile-time path to the sidecar directory; resolves relative to src-tauri/.
@@ -237,10 +238,13 @@ async fn handle_turn(
         return Ok(());
     }
 
-    // Normalize romaji to kana/kanji at the learner's level — beginners get
-    // hiragana only, intermediate gets common kanji, advanced gets full kanji.
+    // Snapshot last_tts before normalize — lock acquired and dropped immediately.
+    let recent_tts: Option<String> = state.last_tts.lock().unwrap().clone();
+
+    // Normalize romaji to kana/kanji at the learner's level, and strip any TTS
+    // echo that bled into the mic from the previous response.
     let transcript = {
-        let normalized = llm.normalize_transcript(&raw_transcript, learner_level).await.unwrap_or_else(|e| {
+        let normalized = llm.normalize_transcript(&raw_transcript, learner_level, recent_tts.as_deref()).await.unwrap_or_else(|e| {
             eprintln!("[normalize] failed: {e}");
             raw_transcript.clone()
         });
@@ -330,6 +334,7 @@ async fn handle_turn(
     tts_result?;
 
     let (full_text, usage) = llm_task.await??;
+    *state.last_tts.lock().unwrap() = Some(full_text.clone());
     let tutor_resp = parse_response_pub(&full_text);
     app.emit("response_done", ResponseDoneEvent {
         full_response: tutor_resp.response.clone(),
@@ -561,6 +566,7 @@ pub fn run() {
             db:            Mutex::new(db),
             session:       Mutex::new(None),
             sidecar_ready: AtomicBool::new(false),
+            last_tts:      Mutex::new(None),
         })
         .setup(|app| {
             let handle = app.handle().clone();

@@ -164,7 +164,8 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
 
 class NormalizeRequest(BaseModel):
     text: str
-    level: int = 5  # JLPT level 1–5 (5 = beginner, 1 = advanced)
+    level: int = 5                  # JLPT level 1–5 (5 = beginner, 1 = advanced)
+    recent_tts: str | None = None   # text recently spoken by TTS — used to strip mic echo
 
 
 class NormalizeResponse(BaseModel):
@@ -174,12 +175,13 @@ class NormalizeResponse(BaseModel):
 @app.post("/llm/normalize", response_model=NormalizeResponse)
 async def normalize(req: NormalizeRequest):
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(_ml_executor, _run_normalize, req.text, req.level)
+    result = await loop.run_in_executor(_ml_executor, _run_normalize, req.text, req.level, req.recent_tts)
     return NormalizeResponse(normalized=result)
 
 
-def _run_normalize(text: str, level: int) -> str:
-    """Convert romanized Japanese words to kana/kanji appropriate for the learner's level."""
+def _run_normalize(text: str, level: int, recent_tts: str | None) -> str:
+    """Convert romanized Japanese words to kana/kanji appropriate for the learner's level,
+    and strip any TTS echo that bled into the mic."""
     from mlx_lm import generate
     tokenizer = _models.llm_tokenizer
     model = _models.llm_model
@@ -198,14 +200,26 @@ def _run_normalize(text: str, level: int) -> str:
             "Use kanji, hiragana, and katakana naturally as a native speaker would."
         )
 
+    system = (
+        "You are a Japanese script converter. "
+        "Rewrite the user's text, converting any romanized Japanese words or phrases "
+        "to their Japanese form. Leave all English words unchanged. "
+        f"{script_rule} "
+        "Return only the rewritten text with no explanation."
+    )
+
+    if recent_tts:
+        system += (
+            f" The following text was recently spoken aloud by text-to-speech: "
+            f"<tts>{recent_tts}</tts>. "
+            f"If the user's text appears to be an echo or transcription of that TTS output "
+            f"(possibly with slight variation or added vocalizations), remove those portions "
+            f"and return only what the user themselves said. "
+            f"If nothing remains after removal, return an empty string."
+        )
+
     messages = [
-        {"role": "system", "content": (
-            "You are a Japanese script converter. "
-            "Rewrite the user's text, converting any romanized Japanese words or phrases "
-            "to their Japanese form. Leave all English words unchanged. "
-            f"{script_rule} "
-            "Return only the rewritten text with no explanation."
-        )},
+        {"role": "system", "content": system},
         {"role": "user", "content": text},
     ]
     prompt = tokenizer.apply_chat_template(
@@ -235,7 +249,7 @@ def _run_tts(text: str, voice: str) -> bytes:
 
     audio_chunks = []
     sample_rate = 24000
-    for result in tts.generate(text, voice=voice):
+    for result in tts.generate(text, voice=voice, temperature=0.0):
         audio_chunks.append(np.array(result.audio))
         sample_rate = result.sample_rate
 

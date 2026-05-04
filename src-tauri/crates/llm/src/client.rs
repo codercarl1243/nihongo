@@ -160,17 +160,27 @@ impl SidecarClient {
         Ok(stream)
     }
 
-    /// Convert romanized Japanese words to kana/kanji appropriate for the learner's level.
-    /// Pure English words are left unchanged. `level` is JLPT 1–5 (5 = beginner).
-    pub async fn normalize_transcript(&self, text: &str, level: u8) -> Result<String> {
+    /// Convert romanized Japanese words to kana/kanji appropriate for the learner's level,
+    /// and strip any TTS echo that bled into the mic. `level` is JLPT 1–5 (5 = beginner).
+    pub async fn normalize_transcript(
+        &self,
+        text: &str,
+        level: u8,
+        recent_tts: Option<&str>,
+    ) -> Result<String> {
         #[derive(Serialize)]
-        struct Req<'a> { text: &'a str, level: u8 }
+        struct Req<'a> {
+            text: &'a str,
+            level: u8,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            recent_tts: Option<&'a str>,
+        }
         #[derive(Deserialize)]
         struct Resp { normalized: String }
 
         let resp: Resp = self.http
             .post(format!("{}/llm/normalize", self.base))
-            .json(&Req { text, level })
+            .json(&Req { text, level, recent_tts })
             .send()
             .await
             .context("normalize request failed")?
