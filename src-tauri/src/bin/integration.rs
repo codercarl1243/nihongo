@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (tutor_resp, tts_input) = match llm_result {
         Ok(text) => {
-            let resp = parse_response_pub(&text);
+            let resp = parse_response_pub(&text, false, false);
             if resp.response.is_empty() {
                 fail("LLM returned empty response".into());
                 failures += 1;

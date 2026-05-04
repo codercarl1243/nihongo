@@ -402,10 +402,10 @@ Full N5 curriculum schema in place: topics, topic dependencies, vocabulary, kanj
 ### Step 9 — Context compaction ✅
 `TutorSession` tracks a rolling token estimate. When a milestone turn crosses 80% of the 4096-token budget, `compact_context` in `lib.rs` streams a structured lesson summary from the LLM, saves it to SQLite, rebuilds the system prompt, and calls `reset_context` to swap in a fresh message list. The swap is a pointer change — no pause in the conversation.
 
-### Step 10 — Polish 🔄
-Done: level-adjusted silence thresholds, barge-in audio buffering (speech during TTS is queued not lost), mic status indicator, 400ms echo tail suppression after TTS playback, kanji-level-appropriate script constraints in tutor responses (hiragana-only for N5/N4, N3 kanji for N3, full kanji for N2/N1).
+### Step 10 — Polish ✅
+Done: level-adjusted silence thresholds, barge-in audio buffering (speech during TTS is queued not lost), mic status indicator, 400ms echo tail suppression after TTS playback, kanji-level-appropriate script constraints in tutor responses (hiragana-only for N5/N4, N3 kanji for N3, full kanji for N2/N1), LLM-based milestone detection, SRS fluency update wiring.
 
-Remaining: voice selection for TTS, milestone detection, fluency update wiring.
+Milestone detection runs as a parallel LLM classification call (`SidecarClient::classify_turn`) fired immediately after the main response stream completes. The sidecar's ML executor is free at that point (all TTS WAV is already queued), so classification finishes during audio playback and adds no latency. On a milestone turn, SRS-due words found in the student's transcript have their fluency incremented and SRS interval extended; on a correction turn, fluency decrements and interval resets to 1 day.
 
 ---
 
@@ -561,3 +561,4 @@ Rust selects which start script to run based on the platform at build time or vi
 - **Reading mode** — paste Japanese text, tutor reads it aloud and explains
 - **Export** — Anki deck export from the vocabulary database
 - **Multiple learners** — learner_profile table already supports this with a user_id
+- **voice selection for TTS** - let the user pick a voice for the tutor rather than a hardcoded default

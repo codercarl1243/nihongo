@@ -311,7 +311,29 @@ async fn handle_turn(
     tts_result?;
 
     let (full_text, usage) = llm_task.await??;
-    let tutor_resp = parse_response_pub(&full_text);
+
+    // Spawn classification in parallel with audio playback so it adds no latency.
+    // The sidecar's ML executor is free at this point — LLM and TTS are both done.
+    let llm_classify  = llm.clone();
+    let tx_classify   = transcript.clone();
+    let ft_classify   = full_text.clone();
+    let classify_task = tokio::spawn(async move {
+        llm_classify
+            .classify_turn(&tx_classify, &ft_classify)
+            .await
+            .unwrap_or((false, false))
+    });
+
+    // ── Wait for all queued audio ────────────────────────────────────────────
+    if total_samples > 0 {
+        let duration = Duration::from_secs_f64(total_samples as f64 / 24_000.0);
+        wait_for_playback(&state, duration).await;
+    }
+
+    let (milestone, correction) = classify_task.await.unwrap_or((false, false));
+    eprintln!("[classify] milestone={milestone} correction={correction}");
+
+    let tutor_resp = parse_response_pub(&full_text, milestone, correction);
     app.emit("response_done", ResponseDoneEvent {
         full_response: tutor_resp.response.clone(),
         milestone: tutor_resp.milestone,
@@ -335,14 +357,28 @@ async fn handle_turn(
         s.record_turn_sync(&transcript, &tutor_resp, &db)?
     };
 
-    // ── 4b. Vocabulary introduction — best-effort, never breaks the pipeline ──
+    // ── 4b. Vocabulary introduction + fluency update ─────────────────────────
+    // best-effort — never breaks the pipeline on DB errors.
     {
         let db = state.db.lock().unwrap();
         if let Ok(ctx) = db.session_context() {
             if let Some(ref active) = ctx.current_topic {
+                // Introduce any topic words that appeared in the student's transcript.
                 if let Ok(ids) = db.find_vocab_in_text(&transcript, active.topic.id) {
-                    for vid in ids {
-                        let _ = db.introduce_word(vid);
+                    for vid in &ids {
+                        let _ = db.introduce_word(*vid);
+                    }
+
+                    // Update SRS fluency for words the student actively used when
+                    // the tutor clearly affirmed or corrected them.
+                    if tutor_resp.milestone || tutor_resp.correction {
+                        let due_ids: std::collections::HashSet<i64> =
+                            ctx.srs_due.iter().map(|v| v.vocabulary_id).collect();
+                        for vid in ids {
+                            if due_ids.contains(&vid) {
+                                let _ = db.update_word_fluency(vid, tutor_resp.milestone);
+                            }
+                        }
                     }
                 }
             }
@@ -352,12 +388,6 @@ async fn handle_turn(
     // ── 5. Context compaction (if milestone + threshold reached) ────────────
     if needs_compact {
         compact_context(app, llm).await?;
-    }
-
-    // ── Wait for all queued audio ────────────────────────────────────────────
-    if total_samples > 0 {
-        let duration = Duration::from_secs_f64(total_samples as f64 / 24_000.0);
-        wait_for_playback(&state, duration).await;
     }
 
     Ok(())

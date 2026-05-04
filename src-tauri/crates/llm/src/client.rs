@@ -37,8 +37,10 @@ pub struct TutorToken {
 #[derive(Debug, Clone, Deserialize)]
 pub struct TutorResponse {
     pub transcript: String,
-    pub response: String,
-    pub milestone: bool,
+    pub response:   String,
+    pub milestone:  bool,
+    /// True when the tutor indicated the student made an error.
+    pub correction: bool,
 }
 
 /// Actual token counts reported by the sidecar at end of stream.
@@ -178,6 +180,50 @@ impl SidecarClient {
             .context("failed to read TTS audio")?;
 
         Ok(bytes.to_vec())
+    }
+
+    /// Ask the LLM to classify whether the turn was a milestone (student answered
+    /// correctly) or a correction (student made an error).
+    ///
+    /// Should be called after the main LLM response is complete and while TTS is
+    /// playing so it adds no latency to the user experience. Defaults to
+    /// `(false, false)` on any network or parse failure.
+    pub async fn classify_turn(
+        &self,
+        transcript: &str,
+        tutor_response: &str,
+    ) -> Result<(bool, bool)> {
+        let system = ChatMessage::system(
+            "You are an evaluator for a Japanese tutoring session. \
+             Given the student's input and the tutor's response, output ONLY a JSON \
+             object with two boolean fields — no prose, no markdown:\n\
+             {\"milestone\": <true if the tutor affirmed the student answered correctly>, \
+              \"correction\": <true if the tutor indicated the student made an error>}\n\
+             Both fields are false for casual conversation or when the turn was not \
+             an assessment of the student's Japanese."
+        );
+        let user = ChatMessage::user(format!(
+            "Student said: {transcript}\nTutor replied: {tutor_response}"
+        ));
+
+        let mut raw = String::new();
+        let mut stream = self.chat_stream(&[system, user]).await?;
+        while let Some(item) = stream.next().await {
+            if let StreamItem::Token(tok) = item? {
+                raw.push_str(&tok);
+            }
+        }
+
+        #[derive(Deserialize)]
+        struct Eval { milestone: bool, correction: bool }
+        let trimmed = raw.trim();
+        if let (Some(s), Some(e)) = (trimmed.find('{'), trimmed.rfind('}')) {
+            if let Ok(ev) = serde_json::from_str::<Eval>(&trimmed[s..=e]) {
+                return Ok((ev.milestone, ev.correction));
+            }
+        }
+        eprintln!("[classify] parse failed, raw={raw:?}");
+        Ok((false, false))
     }
 
     /// Single-shot health ping — returns true if the sidecar is up right now.

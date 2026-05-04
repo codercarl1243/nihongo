@@ -98,9 +98,16 @@ impl TutorSession {
 // Parsing helpers
 // ---------------------------------------------------------------------------
 
-pub fn parse_response_pub(raw: &str) -> TutorResponse {
-    // TODO: detect milestones (student answered correctly) to trigger context compaction
-    TutorResponse { transcript: String::new(), response: raw.trim().to_string(), milestone: false }
+/// Build a `TutorResponse` from the raw LLM text and pre-resolved classification flags.
+/// Classification is performed by a separate `SidecarClient::classify_turn` call in the
+/// main pipeline so this function stays pure and fast.
+pub fn parse_response_pub(raw: &str, milestone: bool, correction: bool) -> TutorResponse {
+    TutorResponse {
+        transcript: String::new(),
+        response:   raw.trim().to_string(),
+        milestone,
+        correction,
+    }
 }
 
 pub fn parse_summary_pub(raw: &str) -> LessonSummary {
@@ -166,14 +173,19 @@ mod tests {
 
     #[test]
     fn parse_response_trims_whitespace() {
-        let resp = parse_response_pub("  こんにちは！  ");
+        let resp = parse_response_pub("  こんにちは！  ", false, false);
         assert_eq!(resp.response, "こんにちは！");
     }
 
     #[test]
-    fn parse_response_sets_milestone_false() {
-        let resp = parse_response_pub("anything");
-        assert!(!resp.milestone);
+    fn parse_response_preserves_flags() {
+        let resp = parse_response_pub("Well done!", true, false);
+        assert!(resp.milestone);
+        assert!(!resp.correction);
+
+        let resp2 = parse_response_pub("Not quite.", false, true);
+        assert!(!resp2.milestone);
+        assert!(resp2.correction);
     }
 
     // ── token_estimate ───────────────────────────────────────────────────────
