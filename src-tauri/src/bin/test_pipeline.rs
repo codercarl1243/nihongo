@@ -65,21 +65,24 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // ── 4. Kanji constraint — N2 (kanji expected) ────────────────────────────
+    // Ask something that requires a content-heavy Japanese response so kanji
+    // appear naturally rather than a one-word kana greeting.
     step(4, 4, "Kanji constraint — N2 profile → kanji present in response");
 
-    let response_n2 = ask_llm(&llm, 2, "こんにちは").await?;
+    let response_n2 = ask_llm(&llm, 2, "最近の勉強について教えてください。").await?;
     let kanji_count_n2 = count_kanji(&response_n2);
 
-    // N2 responses in Japanese should contain kanji — flag if completely absent.
     if kanji_count_n2 > 0 {
         pass(Some(format!(
             "{kanji_count_n2} kanji found — response = {:?}",
             truncate(&response_n2, 80)
         )));
     } else {
-        // Soft warning: the LLM may still reply in English for a greeting.
-        println!("  WARN  N2 response had 0 kanji (may be English reply): {:?}",
-            truncate(&response_n2, 80));
+        fail(format!(
+            "N2 response had 0 kanji — expected Japanese with kanji: {:?}",
+            truncate(&response_n2, 120)
+        ));
+        failures += 1;
     }
 
     // ── Summary ──────────────────────────────────────────────────────────────
