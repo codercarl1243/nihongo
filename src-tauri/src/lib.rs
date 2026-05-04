@@ -185,11 +185,29 @@ async fn handle_turn(
     let state = app.state::<AppState>();
 
     // ── 1. ASR ──────────────────────────────────────────────────────────────
-    // The prompt biases the decoder toward English and Japanese without forcing
-    // a single script — "hello" stays "hello", "元気ですか" stays in kanji,
-    // and Cantonese / other languages are not detected.
-    // TODO: derive target language from learner profile for multi-language support.
-    let transcript = llm.transcribe(&normalize_peak(&audio), Some("English and Japanese.")).await?;
+    // Hard language constraint derived from learner level prevents Whisper from
+    // drifting to unrelated languages (Cantonese, Hindi, etc.).
+    // Beginners use "en" so English words stay in romaji; advanced learners use
+    // "ja" so Japanese is transcribed in kanji/kana directly.
+    let asr_language = {
+        let db = state.db.lock().unwrap();
+        match db.session_context().map(|c| c.profile.current_level).unwrap_or(5) {
+            1 | 2 | 3 => "ja",
+            _          => "en",
+        }
+    };
+    let raw_transcript = llm.transcribe(&normalize_peak(&audio), Some(asr_language)).await?;
+
+    // For English-mode ASR (beginner learners), normalize any romanized Japanese
+    // words the user deliberately spoke (e.g. "arigatou" → "ありがとう").
+    let transcript = if asr_language == "en" {
+        llm.normalize_transcript(&raw_transcript).await.unwrap_or_else(|e| {
+            eprintln!("[handle_turn] normalize failed: {e}");
+            raw_transcript.clone()
+        })
+    } else {
+        raw_transcript
+    };
     if transcript.trim().is_empty() {
         return Ok(());
     }
