@@ -3,12 +3,25 @@
 /// Requires the Python sidecar running on localhost:8091.
 /// Start it with:  cd sidecar && bash start.sh
 /// Then run:       cargo run --bin test_pipeline --manifest-path src-tauri/Cargo.toml
+///   or:           pnpm test:pipeline   (starts sidecar automatically)
+///
+/// Expected output:
+///
+///   [1/4] Sidecar health … PASS
+///   [2/4] ASR round-trip  (TTS → resample 24k→16k → ASR) … PASS  (transcript = "こんにちは。")
+///   [3/4] Kanji constraint — N5 profile → 0 kanji in response … PASS  (response = "こんにちは！")
+///   [4/4] Kanji constraint — N2 profile → kanji present in response … PASS  (N kanji found — response = "…")
+///
+///   ✓ All tests passed.
 ///
 /// Tests:
-///   1. Sidecar health
-///   2. ASR round-trip   — TTS a known phrase → resample → ASR → assert transcript
-///   3. Kanji constraint — fake N5 learner → LLM → assert 0 kanji in response
-///   4. Kanji constraint — fake N2 learner → LLM → assert kanji ARE present
+///   1. Health check   — sidecar responds on localhost:8091
+///   2. ASR round-trip — speaks "こんにちは" via TTS, resamples 24kHz→16kHz,
+///                       feeds to ASR, asserts transcript contains こんにちは
+///   3. N5 constraint  — builds fake N5 SessionContext, asks LLM "こんにちは",
+///                       asserts response contains 0 kanji (hiragana/katakana only)
+///   4. N2 constraint  — builds fake N2 SessionContext, asks a substantive Japanese
+///                       question, asserts response contains at least 1 kanji
 
 use std::io::Write as _;
 use tokio_stream::StreamExt;
