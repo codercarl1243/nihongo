@@ -22,7 +22,6 @@ struct AppState {
     db:             Mutex<Db>,
     session:        Mutex<Option<TutorSession>>,
     sidecar_ready:  AtomicBool,
-    last_tts:       Mutex<Option<String>>,
 }
 
 // Compile-time path to the sidecar directory; resolves relative to src-tauri/.
@@ -225,32 +224,10 @@ async fn handle_turn(
     let state = app.state::<AppState>();
 
     // ── 1. ASR ──────────────────────────────────────────────────────────────
-    // No hard language constraint — let the model auto-detect per utterance so
-    // Japanese and English are both transcribed in their native script.
-    // The normalizer pass below converts any romaji that slips through.
-    let learner_level = {
-        let db = state.db.lock().unwrap();
-        db.session_context().map(|c| c.profile.current_level).unwrap_or(5)
-    };
-    let raw_transcript = llm.transcribe(&normalize_peak(&audio), None).await?;
-    eprintln!("[asr] level={learner_level} raw={raw_transcript:?}");
-    if raw_transcript.trim().is_empty() {
-        return Ok(());
-    }
-
-    // Snapshot last_tts before normalize — lock acquired and dropped immediately.
-    let recent_tts: Option<String> = state.last_tts.lock().unwrap().clone();
-
-    // Normalize romaji to kana/kanji at the learner's level, and strip any TTS
-    // echo that bled into the mic from the previous response.
-    let transcript = {
-        let normalized = llm.normalize_transcript(&raw_transcript, learner_level, recent_tts.as_deref()).await.unwrap_or_else(|e| {
-            eprintln!("[normalize] failed: {e}");
-            raw_transcript.clone()
-        });
-        eprintln!("[normalize] raw={raw_transcript:?} → normalized={normalized:?}");
-        normalized
-    };
+    // No hard language constraint — auto-detect per utterance so both Japanese
+    // and English are transcribed in their native script.
+    let transcript = llm.transcribe(&normalize_peak(&audio), None).await?;
+    eprintln!("[asr] raw={transcript:?}");
     if transcript.trim().is_empty() {
         return Ok(());
     }
@@ -334,7 +311,6 @@ async fn handle_turn(
     tts_result?;
 
     let (full_text, usage) = llm_task.await??;
-    *state.last_tts.lock().unwrap() = Some(full_text.clone());
     let tutor_resp = parse_response_pub(&full_text);
     app.emit("response_done", ResponseDoneEvent {
         full_response: tutor_resp.response.clone(),
@@ -566,7 +542,6 @@ pub fn run() {
             db:            Mutex::new(db),
             session:       Mutex::new(None),
             sidecar_ready: AtomicBool::new(false),
-            last_tts:      Mutex::new(None),
         })
         .setup(|app| {
             let handle = app.handle().clone();

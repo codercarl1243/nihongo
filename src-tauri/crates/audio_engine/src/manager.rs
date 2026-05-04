@@ -164,17 +164,25 @@ impl AudioManager {
         let mut barge_in_turn = false;
         let mut barge_remainder: Vec<f32> = Vec::new();
         let mut prev_muted = false;
+        // After TTS playback ends, suppress new turns briefly so room echo doesn't
+        // get mistaken for user speech. Skipped when a barge-in already filled the buffer.
+        let mut echo_tail_until = Instant::now();
 
         while running.load(Ordering::SeqCst) {
             let is_muted = muted.load(Ordering::SeqCst);
 
-            // On unmute: flush any speech captured during TTS as the next queued turn.
-            if prev_muted && !is_muted && !barge_buffer.is_empty() {
-                let audio = std::mem::take(&mut barge_buffer);
-                barge_in_turn = false;
-                barge_remainder.clear();
-                if turn_tx.blocking_send(audio).is_err() {
-                    return Err(anyhow!("turn_end receiver dropped"));
+            // On unmute: flush barge-in audio (if any) or start an echo suppression window.
+            if prev_muted && !is_muted {
+                if !barge_buffer.is_empty() {
+                    let audio = std::mem::take(&mut barge_buffer);
+                    barge_in_turn = false;
+                    barge_remainder.clear();
+                    if turn_tx.blocking_send(audio).is_err() {
+                        return Err(anyhow!("turn_end receiver dropped"));
+                    }
+                } else {
+                    // No barge-in — suppress VAD for 400ms to let room echo decay.
+                    echo_tail_until = Instant::now() + Duration::from_millis(400);
                 }
             }
             prev_muted = is_muted;
@@ -224,6 +232,12 @@ impl AudioManager {
                 }
                 Err(e) => return Err(e),
             };
+
+            // Echo tail: drain audio without feeding VAD while room echo may be present.
+            if Instant::now() < echo_tail_until {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
 
             Self::align_windows(&mut mono_16k, &mut remainder, config.vad_window);
 

@@ -160,39 +160,6 @@ impl SidecarClient {
         Ok(stream)
     }
 
-    /// Convert romanized Japanese words to kana/kanji appropriate for the learner's level,
-    /// and strip any TTS echo that bled into the mic. `level` is JLPT 1–5 (5 = beginner).
-    pub async fn normalize_transcript(
-        &self,
-        text: &str,
-        level: u8,
-        recent_tts: Option<&str>,
-    ) -> Result<String> {
-        #[derive(Serialize)]
-        struct Req<'a> {
-            text: &'a str,
-            level: u8,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            recent_tts: Option<&'a str>,
-        }
-        #[derive(Deserialize)]
-        struct Resp { normalized: String }
-
-        let resp: Resp = self.http
-            .post(format!("{}/llm/normalize", self.base))
-            .json(&Req { text, level, recent_tts })
-            .send()
-            .await
-            .context("normalize request failed")?
-            .error_for_status()
-            .context("normalize returned error status")?
-            .json()
-            .await
-            .context("failed to parse normalize response")?;
-
-        Ok(resp.normalized)
-    }
-
     /// Send text to the TTS endpoint, receive WAV bytes back.
     pub async fn speak(&self, text: &str) -> Result<Vec<u8>> {
         #[derive(Serialize)]
