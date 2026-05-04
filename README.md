@@ -18,7 +18,7 @@ The tutor understands natural mixed-language speech ("How do I use ありがと�
 ┌─────────────────────────────────────────────────────────────┐
 │                        Tauri App                            │
 │                                                             │
-│   React Frontend (🔄 not yet wired)  src-tauri/src/lib.rs  │
+│   React Frontend                     src-tauri/src/lib.rs  │
 │   ├── ChatWindow                     ├── start/stop_session │
 │   ├── Live transcript stream         ├── barge_in command   │
 │   ├── Tutor response streaming       ├── handle_turn()      │
@@ -106,17 +106,20 @@ sidecar/                        ← Python process, serves all three model endpo
 ### Conversation Loop (always running)
 
 ```
-1. cpal captures mic audio at native sample rate (48kHz stereo typical)
-2. Resampler converts to 16kHz mono f32
-3. VAD detects speech start → audio accumulates in utterance buffer
-4. VAD detects trailing silence → utterance complete, send buffered clip to ASR
-5. ASR returns transcript text → emitted to React (live display)
-6. LLM receives full message history → streams plain-text reply
-7. Accumulated reply emitted to React via response_done event
-8. db scans transcript for topic vocabulary → calls introduce_word for new words
-9. TTS receives complete reply text → returns WAV bytes
-10. AudioManager muted; WAV played back via AudioPlayer; mic re-enabled when done
-11. barge_in command (or natural playback end) clears player buffer, re-enables mic
+1.  cpal captures mic audio at native sample rate (48kHz stereo typical)
+2.  Resampler converts to 16kHz mono f32
+3.  VAD detects speech start → audio accumulates in utterance buffer
+4.  VAD detects trailing silence (level-adjusted: 700ms N1/N2 → 1200ms N4/N5) → turn complete
+5.  ASR receives clip — no language constraint, auto-detects Japanese or English per utterance
+6.  Empty transcript → silently dropped, mic stays open
+7.  Transcript emitted to React (transcript event); mic_status { active: false } emitted (UI shows "Thinking…")
+8.  LLM receives full message history → streams plain-text reply sentence by sentence
+9.  Each sentence sent to TTS as it arrives (pipelined — TTS for sentence N overlaps LLM generating N+1)
+10. Mic muted before first TTS chunk plays; WAV decoded and pushed to AudioPlayer
+11. On unmute: 400ms echo tail suppression prevents room echo triggering a false turn
+12. mic_status { active: true } emitted — back to "Listening"
+13. db scans transcript for topic vocabulary → introduce_word for new words
+14. Silence threshold adjusted for next turn (500ms for drill prompts, level default otherwise)
 ```
 
 ### Barge-in
@@ -124,20 +127,45 @@ sidecar/                        ← Python process, serves all three model endpo
 When the user speaks while the tutor is responding:
 
 ```
-VAD detects speech energy during TTS playback
+VAD (separate barge_vad instance, isolated LSTM state) detects speech during TTS playback
      ↓
-Tauri command cancels current TTS stream
+barge_in flag set → TTS sentence loop stops, player buffer drained
+Speech captured into barge_buffer (not discarded)
      ↓
-Fresh audio chunks flow to ASR
+On unmute: barge_buffer flushed as the next queued turn
      ↓
-LLM responds to the interruption naturally
+Full conversation context intact — no turns lost
 ```
+
+---
+
+## Audio Pipeline Behaviours
+
+**Level-adjusted silence threshold**
+The VAD turn-end silence window scales with JLPT level so beginners get more time to retrieve words:
+- N1/N2: 700ms
+- N3: 900ms
+- N4/N5: 1200ms
+
+After a drill prompt ("try saying…", "repeat after me"), the threshold tightens to 500ms for the next turn only, then resets.
+
+**Echo tail suppression**
+After TTS playback finishes and the mic unmutes, VAD is suppressed for 400ms to let room echo decay before turn detection resumes. If the user barges in during TTS, the barge buffer is flushed immediately and the suppression window is skipped.
+
+**Kanji level in tutor responses**
+The system prompt constrains the script the tutor uses:
+- N5/N4: hiragana and katakana only — no kanji
+- N3: common everyday kanji (N3 and below), less familiar kanji in hiragana
+- N2/N1: full kanji as a native speaker would write
+
+**Partial chunks (speculative transcription — not yet wired)**
+`AudioManager` emits a rolling `partial` channel alongside `turn_end` — a snapshot of the growing speech buffer every ~1 second while the user is speaking. Available for speculative ASR before the turn ends; not yet consumed.
 
 ---
 
 ## Python Sidecar
 
-The sidecar is a Python process exposing three local HTTP endpoints on `localhost:8091`. It runs Qwen3-ASR and Qwen3-TTS via `mlx-audio` and the tutor LLM via `mlx-lm`. Model paths are read from `Models.json` at startup. Rust communicates with it via `reqwest` streaming calls.
+The sidecar is a Python process exposing three local HTTP endpoints on `localhost:8091`. It runs Qwen3-ASR and Qwen3-TTS (CustomVoice) via `mlx-audio` and the tutor LLM via `mlx-lm`. Model paths are read from `Models.json` at startup. Rust communicates with it via `reqwest` streaming calls. TTS runs at `temperature=0.0` for deterministic output. All ML inference runs on a single-threaded executor (`ThreadPoolExecutor(max_workers=1)`) since MLX GPU streams are thread-local.
 
 ### Endpoints used
 
@@ -307,7 +335,7 @@ The LLM is asked to produce `{"notes": "..."}` — a freeform paragraph covering
 |---|---|---|---|
 | Qwen3-ASR | ~1–2GB | Speech → transcript (handles mid-sentence code-switching) | mlx-audio |
 | Qwen3.6-27B-4bit | ~14GB | Tutor LLM | mlx-lm |
-| Qwen3-TTS-12Hz-1.7B-VoiceDesign | ~2GB | Text → speech | mlx-audio |
+| Qwen3-TTS-12Hz-1.7B-CustomVoice | ~2GB | Text → speech | mlx-audio |
 | ~~Whisper~~ (removed) | — | Abandoned: cannot handle mid-sentence language code-switching (e.g. "what does もも mean?") | — |
 
 > All models run locally. No audio or conversation data is sent to any external service.
@@ -335,7 +363,7 @@ All three models load simultaneously at ~18GB total, leaving ~30GB free for the 
 | Model config | `Models.json` (swap models without code changes) |
 | STT | Qwen3-ASR |
 | Tutor LLM | Qwen3.6-27B-4bit |
-| TTS | Qwen3-TTS-12Hz-1.7B-VoiceDesign |
+| TTS | Qwen3-TTS-12Hz-1.7B-CustomVoice |
 
 ---
 
@@ -362,8 +390,8 @@ FastAPI server (`sidecar/server.py`) loading all three models lazily from `Model
 ### Step 5 — Tauri commands ✅
 `lib.rs` wires everything into three commands: `start_session`, `stop_session`, `barge_in`. The `handle_turn` async function runs the full per-utterance pipeline: ASR → push user turn → LLM stream → emit `response_done` → persist turn → introduce vocabulary → compact if milestone → TTS playback with mute/unmute. Events emitted to React: `transcript`, `response_done`, `session_ready`, `error`.
 
-### Step 6 — React UI 🔄
-`ChatWindow` component exists with message list and input. **Not yet connected to Tauri** — `useChat.ts` still uses hardcoded test messages. `useEvents.ts` and `api.ts` reference old command/event names from an earlier design. Next: wire `transcript`, `response_token`, and `response_done` events into the chat state, and call `start_session` / `stop_session` from the audio button.
+### Step 6 — React UI ✅
+`ChatWindow` displays live transcript and tutor responses. All Tauri events wired: `transcript`, `response_done`, `mic_status`, `sidecar_status`, `session_ready`, `error`. Zustand store tracks `micActive` and `isThinking`. Mic indicator shows **Listening** (green pulse) / **Thinking…** (blue) / **Speaking** states. Token usage (prompt + generation) displayed per turn. `start_session` / `stop_session` called from the audio button.
 
 ### Step 7 — db crate ✅ (schema + introduction) / 🔄 (fluency updates)
 Full N5 curriculum schema in place: topics, topic dependencies, vocabulary, kanji, student_vocabulary, student_kanji, SRS schedule, lesson plans, and structured lesson summaries. N5 seed data (14 topics, 130 words, 36 kanji) inserted on first run via `PRAGMA user_version` migration. `session_context()`, `find_vocab_in_text()`, `introduce_word()`, `update_word_fluency()`, `update_kanji_fluency()`, `mark_topic_status()`, `save_lesson_summary()`, and `latest_lesson_summary()` all implemented. `handle_turn` calls `find_vocab_in_text` + `introduce_word` after each turn. **Not yet wired**: `update_word_fluency` — requires milestone detection to know whether an attempt was correct.
@@ -374,8 +402,10 @@ Full N5 curriculum schema in place: topics, topic dependencies, vocabulary, kanj
 ### Step 9 — Context compaction ✅
 `TutorSession` tracks a rolling token estimate. When a milestone turn crosses 80% of the 4096-token budget, `compact_context` in `lib.rs` streams a structured lesson summary from the LLM, saves it to SQLite, rebuilds the system prompt, and calls `reset_context` to swap in a fresh message list. The swap is a pointer change — no pause in the conversation.
 
-### Step 10 — Polish ⬜
-Barge-in UX tuning. VAD silence threshold configuration. Voice selection for TTS.
+### Step 10 — Polish 🔄
+Done: level-adjusted silence thresholds, barge-in audio buffering (speech during TTS is queued not lost), mic status indicator, 400ms echo tail suppression after TTS playback, kanji-level-appropriate script constraints in tutor responses (hiragana-only for N5/N4, N3 kanji for N3, full kanji for N2/N1).
+
+Remaining: voice selection for TTS, milestone detection, fluency update wiring.
 
 ---
 
