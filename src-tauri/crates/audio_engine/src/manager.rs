@@ -16,6 +16,12 @@ pub struct EngineConfig {
     /// How many samples to accumulate before emitting a partial chunk.
     /// At 16kHz, 16000 = 1 second, 32000 = 2 seconds.
     pub partial_chunk_samples: usize,
+    /// How long to ignore mic input after muting before barge-in detection activates.
+    /// During this window the mic captures speaker output directly (before the room
+    /// echo settles), so any speech detection would be a false positive.
+    /// Short TTS responses (e.g. greetings) complete within this window, effectively
+    /// disabling barge-in for them while still allowing interruption on longer replies.
+    pub barge_in_start_delay: Duration,
 }
 
 impl Default for EngineConfig {
@@ -25,6 +31,7 @@ impl Default for EngineConfig {
             silence_threshold: Duration::from_millis(600),
             vad_sensitivity: 0.5,
             partial_chunk_samples: 16_000, // emit partial every ~1s of speech
+            barge_in_start_delay: Duration::from_millis(700),
         }
     }
 }
@@ -170,12 +177,21 @@ impl AudioManager {
         let mut barge_in_turn = false;
         let mut barge_remainder: Vec<f32> = Vec::new();
         let mut prev_muted = false;
+        // Timestamp when we entered muted state. Barge-in detection is suppressed
+        // until barge_in_start_delay has elapsed to avoid treating the speaker
+        // echo as an interruption.
+        let mut muted_since = Instant::now();
         // After TTS playback ends, suppress new turns briefly so room echo doesn't
         // get mistaken for user speech. Skipped when a barge-in already filled the buffer.
         let mut echo_tail_until = Instant::now();
 
         while running.load(Ordering::SeqCst) {
             let is_muted = muted.load(Ordering::SeqCst);
+
+            // Record when TTS playback starts so barge-in delay is measured from mute onset.
+            if !prev_muted && is_muted {
+                muted_since = Instant::now();
+            }
 
             // On unmute: flush barge-in audio (if any) or start an echo suppression window.
             if prev_muted && !is_muted {
@@ -209,8 +225,13 @@ impl AudioManager {
 
                 Self::align_windows(&mut mono_16k, &mut barge_remainder, config.vad_window);
 
+                // Skip barge-in detection during the startup window: the mic captures
+                // the speaker output directly for the first few hundred ms, so any
+                // speech detected here is echo rather than the user interrupting.
+                let barge_in_active = muted_since.elapsed() >= config.barge_in_start_delay;
+
                 for chunk in mono_16k.chunks_exact(config.vad_window) {
-                    if barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
+                    if barge_in_active && barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
                         if !barge_in_turn {
                             barge_in_turn = true;
                             barge_buffer.clear();
