@@ -159,6 +159,46 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
 
 
 # ---------------------------------------------------------------------------
+# Transcript normalization endpoint
+# ---------------------------------------------------------------------------
+
+class NormalizeRequest(BaseModel):
+    text: str
+
+
+class NormalizeResponse(BaseModel):
+    normalized: str
+
+
+@app.post("/llm/normalize", response_model=NormalizeResponse)
+async def normalize(req: NormalizeRequest):
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(_ml_executor, _run_normalize, req.text)
+    return NormalizeResponse(normalized=result)
+
+
+def _run_normalize(text: str) -> str:
+    """Convert romanized Japanese words in an English sentence to kanji/kana."""
+    from mlx_lm import generate
+    tokenizer = _models.llm_tokenizer
+    model = _models.llm_model
+    messages = [
+        {"role": "system", "content": (
+            "You are a Japanese script converter. "
+            "Rewrite the user's text, converting any romanized Japanese words or phrases "
+            "to their native kanji/kana form. Leave all English words unchanged. "
+            "Return only the rewritten text with no explanation."
+        )},
+        {"role": "user", "content": text},
+    ]
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True, enable_thinking=False
+    )
+    result = generate(model, tokenizer, prompt, max_tokens=64)
+    return result.strip()
+
+
+# ---------------------------------------------------------------------------
 # TTS endpoint
 # ---------------------------------------------------------------------------
 
