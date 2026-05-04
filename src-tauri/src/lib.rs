@@ -185,7 +185,11 @@ async fn handle_turn(
     let state = app.state::<AppState>();
 
     // ── 1. ASR ──────────────────────────────────────────────────────────────
-    let transcript = llm.transcribe(&normalize_peak(&audio)).await?;
+    // The prompt biases the decoder toward English and Japanese without forcing
+    // a single script — "hello" stays "hello", "元気ですか" stays in kanji,
+    // and Cantonese / other languages are not detected.
+    // TODO: derive target language from learner profile for multi-language support.
+    let transcript = llm.transcribe(&normalize_peak(&audio), Some("English and Japanese.")).await?;
     if transcript.trim().is_empty() {
         return Ok(());
     }
