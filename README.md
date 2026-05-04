@@ -490,6 +490,68 @@ One-time screen shown on first launch. Four level-select buttons map to JLPT N5�
 
 **Prompt** (`prompt.rs`): when `current_level < 5`, inject a note telling the tutor to keep pace brisk — the student has prior experience and is reviewing below-level material.
 
+### DB-backed kanji normalisation in transcript display
+
+ASR outputs standard Japanese (kanji/kana mix). Before showing the transcript to the user, intercept each kanji character and check it against `student_kanji` in SQLite. If the kanji is not yet learnt, convert it to hiragana using `pykakasi` (already available in the sidecar Python env). This means the transcript dynamically reflects the student's actual knowledge — no scary unknown kanji — and improves as they progress.
+
+**Sidecar** (`server.py`): add a lightweight `/asr/display` post-processing step (or inline in `/asr/transcribe`) that accepts the raw transcript + learnt kanji list and returns a display-safe version. Use `pykakasi` for kanji→hiragana conversion.
+
+**Rust** (`lib.rs`): after ASR, fetch the learner's known kanji from `db.known_kanji()`, pass to the display normalisation call, emit the result as the `transcript` event.
+
+**DB** (`store.rs`): add `known_kanji() → Vec<String>` — returns the kanji characters the student has encountered (fluency > 0 in `student_kanji`).
+
+---
+
+### Structured compaction output for fluency wiring
+
+Currently `compact_context` asks the LLM for `{"notes": "..."}` freeform text. Extend the compaction prompt to also output a structured vocabulary outcome list so Rust can programmatically call `update_word_fluency`:
+
+```json
+{
+  "notes": "...",
+  "vocab_outcomes": [
+    { "word": "元気", "outcome": "correct" },
+    { "word": "天気", "outcome": "confused" }
+  ]
+}
+```
+
+**Tutor** (`session.rs`): extend `parse_summary_pub` to extract `vocab_outcomes`.
+
+**Lib** (`lib.rs`): after compaction, iterate outcomes and call `db.update_word_fluency()` for each — this wires up the fluency tracking that is currently unimplemented.
+
+---
+
+### Smaller model variants for lower-spec hardware
+
+The sidecar loads models from `Models.json` — no code changes required to try smaller variants. Candidates worth benchmarking:
+
+- **ASR**: `Qwen3-ASR-0.6B` — significantly lighter than 1.7B, reported first-packet latency under 100ms
+- **TTS**: `Qwen3-TTS-0.6B` — designed for low-latency generation (~97ms end-to-end)
+- **LLM**: `Qwen3-8B-4bit` or `Qwen3-1.7B` — fits in 4–8GB, suitable for machines with less RAM
+
+Update `Models.json` paths to test; revert if quality is insufficient. No Rust or Python changes needed.
+
+---
+
+### Cross-platform support (Windows / Linux)
+
+The Rust/Tauri core and React UI are already cross-platform. The Mac-specific parts are:
+- `com.apple.security.device.audio-input` entitlement (Mac sandbox only)
+- The Python sidecar, which uses MLX (Apple Silicon only)
+
+The sidecar's HTTP interface (`/asr/transcribe`, `/llm/chat`, `/tts/speak`) already provides the right abstraction — Rust doesn't care what runs behind it.
+
+**Proposed approach**: maintain the MLX sidecar for Mac and add a second `start_ollama.sh` + alternate `server_ollama.py` for Windows/Linux using:
+
+| Component | Replacement |
+|---|---|
+| LLM (mlx-lm) | [Ollama](https://ollama.com) with OpenAI-compatible API |
+| ASR (mlx-audio) | [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CUDA/CPU) |
+| TTS (mlx-audio) | [Kokoro](https://github.com/hexgrad/kokoro) or [Piper](https://github.com/rhasspy/piper) |
+
+Rust selects which start script to run based on the platform at build time or via a config flag.
+
 ---
 
 ## Future Considerations
