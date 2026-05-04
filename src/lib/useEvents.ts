@@ -4,13 +4,14 @@ import { getSidecarReady } from './api';
 import { useAppStore } from './store';
 
 export default function useEvents() {
-    const addMessage       = useAppStore((s) => s.addMessage);
-    const appendToken      = useAppStore((s) => s.appendToken);
-    const finalizeStream   = useAppStore((s) => s.finalizeStream);
-    const setSessionStatus = useAppStore((s) => s.setSessionStatus);
-    const setPromptTokens  = useAppStore((s) => s.setPromptTokens);
-    const setMicActive     = useAppStore((s) => s.setMicActive);
-    const setIsThinking    = useAppStore((s) => s.setIsThinking);
+    const addMessage        = useAppStore((s) => s.addMessage);
+    const appendToken       = useAppStore((s) => s.appendToken);
+    const finalizeStream    = useAppStore((s) => s.finalizeStream);
+    const setSessionStatus  = useAppStore((s) => s.setSessionStatus);
+    const setPromptTokens   = useAppStore((s) => s.setPromptTokens);
+    const setMicActive      = useAppStore((s) => s.setMicActive);
+    const setIsThinking     = useAppStore((s) => s.setIsThinking);
+    const setPipelineStage  = useAppStore((s) => s.setPipelineStage); // [PIPELINE_DEBUG]
 
     useEffect(() => {
         // `cancelled` guards against the React StrictMode double-mount pattern:
@@ -54,6 +55,9 @@ export default function useEvents() {
                     addMessage('system', `Error: ${e.payload.message}`);
                     setSessionStatus('idle');
                 }),
+                listen<{ stage: string }>('pipeline_status', (e) => { // [PIPELINE_DEBUG]
+                    setPipelineStage(e.payload.stage);                  // [PIPELINE_DEBUG]
+                }),                                                       // [PIPELINE_DEBUG]
             ]);
 
             if (cancelled) {
@@ -78,5 +82,5 @@ export default function useEvents() {
             cancelled = true;
             cleanup.forEach((fn) => fn());
         };
-    }, [addMessage, appendToken, finalizeStream, setSessionStatus, setPromptTokens, setMicActive, setIsThinking]);
+    }, [addMessage, appendToken, finalizeStream, setSessionStatus, setPromptTokens, setMicActive, setIsThinking, setPipelineStage]); // [PIPELINE_DEBUG] setPipelineStage
 }

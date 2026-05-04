@@ -32,17 +32,19 @@ const SIDECAR_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar");
 // ---------------------------------------------------------------------------
 
 #[derive(Clone, Serialize)]
-struct SidecarStatusEvent { state: String, message: Option<String> }
+struct SidecarStatusEvent  { state: String, message: Option<String> }
 #[derive(Clone, Serialize)]
-struct TranscriptEvent    { text: String }
+struct TranscriptEvent     { text: String }
 #[derive(Clone, Serialize)]
-struct ResponseDoneEvent  { full_response: String, milestone: bool, prompt_tokens: u32 }
+struct ResponseDoneEvent   { full_response: String, milestone: bool, prompt_tokens: u32 }
 #[derive(Clone, Serialize)]
-struct SessionReadyEvent  { greeting: String }
+struct SessionReadyEvent   { greeting: String }
 #[derive(Clone, Serialize)]
-struct ErrorEvent         { message: String }
+struct ErrorEvent          { message: String }
 #[derive(Clone, Serialize)]
-struct MicStatusEvent     { active: bool }
+struct MicStatusEvent      { active: bool }
+#[derive(Clone, Serialize)]
+struct PipelineStatusEvent { stage: String } // [PIPELINE_DEBUG]
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -86,14 +88,26 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
     }
 
     let llm = state.llm.clone();
-    let mut turn_stream = streams.turn_end;
+    let mut turn_stream   = streams.turn_end;
     let mut partial_stream = streams.partial;
+    let mut vad_stream    = streams.vad_state; // [PIPELINE_DEBUG]
     let greeting_app = app.clone();
 
     // Keep the partial receiver alive; drain without consuming.
     // Replace this task with speculative ASR when that feature is added.
     tokio::spawn(async move {
         while partial_stream.next().await.is_some() {}
+    });
+
+    // [PIPELINE_DEBUG] — remove this block and the vad_state stream when done
+    let vad_status_app = app.clone();
+    tokio::spawn(async move {
+        while let Some(stage) = vad_stream.next().await {
+            let _ = vad_status_app.emit(
+                "pipeline_status",
+                PipelineStatusEvent { stage: stage.to_string() },
+            );
+        }
     });
 
     tokio::spawn(async move {
@@ -188,6 +202,7 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
     })?;
     app.emit("session_ready", SessionReadyEvent { greeting: greeting.to_string() })?;
     app.emit("mic_status", MicStatusEvent { active: true })?;
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "VAD 1: Listening".into() })?; // [PIPELINE_DEBUG]
 
     Ok(())
 }
@@ -226,6 +241,7 @@ async fn handle_turn(
     // ── 1. ASR ──────────────────────────────────────────────────────────────
     // No hard language constraint — auto-detect per utterance so both Japanese
     // and English are transcribed in their native script.
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "ASR: Transcribing".into() }).ok(); // [PIPELINE_DEBUG]
     let transcript = llm.transcribe(&normalize_peak(&audio), None).await?;
     eprintln!("[asr] raw={transcript:?}");
     if transcript.trim().is_empty() {
@@ -235,6 +251,8 @@ async fn handle_turn(
     // User's turn is received — show thinking state immediately rather than
     // leaving the mic indicator on "Listening" through the whole pipeline.
     app.emit("mic_status", MicStatusEvent { active: false }).ok();
+
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "LLM: Generating".into() }).ok(); // [PIPELINE_DEBUG]
 
     // ── 2. Append user turn, snapshot history ────────────────────────────────
     // Lock acquired and dropped before any await.
@@ -283,6 +301,7 @@ async fn handle_turn(
     let tts_result = async {
         while let Some(sentence) = sentence_rx.recv().await {
             if !tts_started {
+                app.emit("pipeline_status", PipelineStatusEvent { stage: "TTS: Synthesizing".into() }).ok(); // [PIPELINE_DEBUG]
                 state.audio.lock().unwrap().mute();
                 state.player.lock().unwrap().resume();
                 tts_started = true;
@@ -312,6 +331,15 @@ async fn handle_turn(
 
     let (full_text, usage) = llm_task.await??;
 
+    // Emit response immediately so text appears while audio is still playing.
+    // milestone is false here — classification is not yet complete (runs in parallel).
+    app.emit("response_done", ResponseDoneEvent {
+        full_response: full_text.trim().to_string(),
+        milestone: false,
+        prompt_tokens: usage.prompt_tokens,
+    })?;
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "Audio: Playing".into() }).ok(); // [PIPELINE_DEBUG]
+
     // Spawn classification in parallel with audio playback so it adds no latency.
     // The sidecar's ML executor is free at this point — LLM and TTS are both done.
     let llm_classify  = llm.clone();
@@ -333,12 +361,9 @@ async fn handle_turn(
     let (milestone, correction) = classify_task.await.unwrap_or((false, false));
     eprintln!("[classify] milestone={milestone} correction={correction}");
 
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "DB: Writing".into() }).ok(); // [PIPELINE_DEBUG]
+
     let tutor_resp = parse_response_pub(&full_text, milestone, correction);
-    app.emit("response_done", ResponseDoneEvent {
-        full_response: tutor_resp.response.clone(),
-        milestone: tutor_resp.milestone,
-        prompt_tokens: usage.prompt_tokens,
-    })?;
 
     // Adjust silence threshold for the next turn based on what the tutor just said.
     // Drill prompts expect a short specific phrase → tighten to 500ms.
@@ -389,6 +414,8 @@ async fn handle_turn(
     if needs_compact {
         compact_context(app, llm).await?;
     }
+
+    app.emit("pipeline_status", PipelineStatusEvent { stage: "VAD 1: Listening".into() }).ok(); // [PIPELINE_DEBUG]
 
     Ok(())
 }

@@ -15,6 +15,7 @@ type AppState = {
     promptTokens: number;
     micActive: boolean;
     isThinking: boolean;
+    pipelineStage: string; // [PIPELINE_DEBUG]
 
     setSessionStatus: (status: SessionStatus) => void;
     addMessage: (sender: 'user' | 'tutor' | 'system', text: string) => void;
@@ -23,6 +24,7 @@ type AppState = {
     setPromptTokens: (n: number) => void;
     setMicActive: (active: boolean) => void;
     setIsThinking: (thinking: boolean) => void;
+    setPipelineStage: (stage: string) => void; // [PIPELINE_DEBUG]
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -32,6 +34,7 @@ export const useAppStore = create<AppState>((set) => ({
     promptTokens: 0,
     micActive: false,
     isThinking: false,
+    pipelineStage: '', // [PIPELINE_DEBUG]
 
     setSessionStatus: (sessionStatus) => set({ sessionStatus }),
 
@@ -55,4 +58,5 @@ export const useAppStore = create<AppState>((set) => ({
     setPromptTokens: (promptTokens) => set({ promptTokens }),
     setMicActive: (micActive) => set({ micActive }),
     setIsThinking: (isThinking) => set({ isThinking }),
+    setPipelineStage: (pipelineStage) => set({ pipelineStage }), // [PIPELINE_DEBUG]
 }));

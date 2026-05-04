@@ -37,6 +37,9 @@ pub struct AudioStreams {
     pub partial: ReceiverStream<Vec<f32>>,
     /// Complete utterance emitted on turn end — feed to final transcription + LLM.
     pub turn_end: ReceiverStream<Vec<f32>>,
+    /// [PIPELINE_DEBUG] VAD state change labels for the pipeline indicator UI.
+    /// Carries stage name strings (e.g. "VAD 1: Speech Detected").
+    pub vad_state: ReceiverStream<&'static str>,
 }
 
 pub struct AudioManager {
@@ -112,6 +115,7 @@ impl AudioManager {
 
         let (partial_tx, partial_rx) = mpsc::channel::<Vec<f32>>(8);
         let (turn_tx, turn_rx) = mpsc::channel::<Vec<f32>>(8);
+        let (vad_tx, vad_rx) = mpsc::channel::<&'static str>(16); // [PIPELINE_DEBUG]
 
         self.is_running.store(true, Ordering::SeqCst);
         let running      = self.is_running.clone();
@@ -120,7 +124,7 @@ impl AudioManager {
         let threshold_ms = self.silence_threshold_ms.clone();
 
         thread::spawn(move || {
-            if let Err(e) = Self::run_loop(partial_tx, turn_tx, running, muted, barge_in, threshold_ms, config) {
+            if let Err(e) = Self::run_loop(partial_tx, turn_tx, vad_tx, running, muted, barge_in, threshold_ms, config) {
                 eprintln!("[manager] loop error: {}", e);
             }
         });
@@ -128,12 +132,14 @@ impl AudioManager {
         Ok(AudioStreams {
             partial: ReceiverStream::new(partial_rx),
             turn_end: ReceiverStream::new(turn_rx),
+            vad_state: ReceiverStream::new(vad_rx), // [PIPELINE_DEBUG]
         })
     }
 
     fn run_loop(
         partial_tx: mpsc::Sender<Vec<f32>>,
         turn_tx: mpsc::Sender<Vec<f32>>,
+        vad_tx: mpsc::Sender<&'static str>, // [PIPELINE_DEBUG]
         running: Arc<AtomicBool>,
         muted: Arc<AtomicBool>,
         barge_in: Arc<AtomicBool>,
@@ -209,6 +215,7 @@ impl AudioManager {
                             barge_buffer.clear();
                             // Signal the pipeline to stop TTS early.
                             barge_in.store(true, Ordering::SeqCst);
+                            vad_tx.try_send("VAD 2: Barge-In Detected").ok(); // [PIPELINE_DEBUG]
                         }
                         barge_buffer.extend_from_slice(chunk);
                     } else if barge_in_turn {
@@ -249,6 +256,7 @@ impl AudioManager {
                         in_turn = true;
                         speech_buffer.clear();
                         samples_emitted_as_partial = 0;
+                        vad_tx.try_send("VAD 1: Speech Detected").ok(); // [PIPELINE_DEBUG]
                     }
                     last_voice = Instant::now();
                     speech_buffer.extend_from_slice(chunk);
@@ -272,6 +280,7 @@ impl AudioManager {
 
                     if last_voice.elapsed() > Duration::from_millis(threshold_ms.load(Ordering::SeqCst)) {
                         // Turn ended — send the complete utterance.
+                        vad_tx.try_send("VAD 1: Silence Detected").ok(); // [PIPELINE_DEBUG]
                         let full_audio = std::mem::take(&mut speech_buffer);
                         samples_emitted_as_partial = 0;
                         in_turn = false;
@@ -279,6 +288,7 @@ impl AudioManager {
                         if turn_tx.blocking_send(full_audio).is_err() {
                             return Err(anyhow!("turn_end receiver dropped"));
                         }
+                        vad_tx.try_send("VAD 1: Listening").ok(); // [PIPELINE_DEBUG]
                     }
                 }
             }

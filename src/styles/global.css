@@ -116,4 +116,30 @@
         0%, 100% { opacity: 1; transform: scale(1); }
         50%       { opacity: 0.4; transform: scale(0.8); }
     }
+
+    /* [PIPELINE_DEBUG] — remove this block when pipeline indicators are no longer needed */
+    .pipeline-flow {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.2rem;
+        font-size: 0.65rem;
+        color: white;
+        padding: 0.5rem 0;
+    }
+
+    .pipeline-step {
+        opacity: 0.5;
+        white-space: nowrap;
+    }
+
+    .pipeline-step.active {
+        opacity: 1;
+        font-weight: 600;
+    }
+
+    .pipeline-arrow {
+        opacity: 0.3;
+        flex-shrink: 0;
+    }
 }
