@@ -111,6 +111,8 @@ impl AudioManager {
             capture.config.channels,
         )?;
         let mut vad = SpeechDetector::new(16_000, config.vad_window)?;
+        // Separate instance so barge-in detection never touches the main VAD's LSTM state.
+        let mut barge_vad = SpeechDetector::new(16_000, config.vad_window)?;
 
         let mut remainder = Vec::new();
         let mut speech_buffer: Vec<f32> = Vec::new();
@@ -120,17 +122,60 @@ impl AudioManager {
         // Used to avoid re-sending the same audio in the final turn_end chunk.
         let mut samples_emitted_as_partial: usize = 0;
 
+        // Speech spoken while TTS is playing is buffered here and flushed as the
+        // next turn immediately after unmute, so it gets transcribed and sent to
+        // the model with full conversation context intact.
+        let mut barge_buffer: Vec<f32> = Vec::new();
+        let mut barge_in_turn = false;
+        let mut barge_remainder: Vec<f32> = Vec::new();
+        let mut prev_muted = false;
+
         while running.load(Ordering::SeqCst) {
-            // While muted (TTS playing), drain audio silently to keep the
-            // capture buffer from overflowing, but don't feed VAD or emit turns.
-            // TODO: detect speech during mute and treat it as a voice barge-in,
-            // stopping TTS and unmuting so the user's utterance is captured.
-            if muted.load(Ordering::SeqCst) {
-                let _ = resampler.process_available(&mut consumer);
+            let is_muted = muted.load(Ordering::SeqCst);
+
+            // On unmute: flush any speech captured during TTS as the next queued turn.
+            if prev_muted && !is_muted && !barge_buffer.is_empty() {
+                let audio = std::mem::take(&mut barge_buffer);
+                barge_in_turn = false;
+                barge_remainder.clear();
+                if turn_tx.blocking_send(audio).is_err() {
+                    return Err(anyhow!("turn_end receiver dropped"));
+                }
+            }
+            prev_muted = is_muted;
+
+            if is_muted {
+                // Drain the resampler to prevent the ring buffer from overflowing,
+                // then run VAD on the result so any speech the user makes during
+                // TTS playback is buffered for processing after unmute.
+                let mut mono_16k = match resampler.process_available(&mut consumer) {
+                    Ok(s) if !s.is_empty() => s,
+                    Ok(_) => {
+                        thread::sleep(Duration::from_millis(10));
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                };
+
+                Self::align_windows(&mut mono_16k, &mut barge_remainder, config.vad_window);
+
+                for chunk in mono_16k.chunks_exact(config.vad_window) {
+                    if barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
+                        if !barge_in_turn {
+                            barge_in_turn = true;
+                            barge_buffer.clear();
+                        }
+                        barge_buffer.extend_from_slice(chunk);
+                    } else if barge_in_turn {
+                        // Keep buffering trailing silence for context; the turn
+                        // boundary is determined on unmute, not during mute.
+                        barge_buffer.extend_from_slice(chunk);
+                    }
+                }
+
                 speech_buffer.clear();
                 in_turn = false;
                 samples_emitted_as_partial = 0;
-                thread::sleep(Duration::from_millis(10));
                 continue;
             }
 

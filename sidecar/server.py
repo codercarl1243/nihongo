@@ -42,8 +42,8 @@ async def startup():
 # ---------------------------------------------------------------------------
 
 class TranscribeRequest(BaseModel):
-    audio_b64: str          # base64-encoded little-endian f32 PCM at 16kHz mono
-    language: str = "ja"   # force language; prevents multi-language confusion on noisy input
+    audio_b64: str           # base64-encoded little-endian f32 PCM at 16kHz mono
+    language: str | None = None  # None = Whisper auto-detects per utterance
 
 
 class TranscribeResponse(BaseModel):
@@ -78,15 +78,16 @@ async def transcribe(req: TranscribeRequest):
     return TranscribeResponse(transcript=transcript.strip())
 
 
-def _run_asr(audio: np.ndarray, language: str) -> str:
+def _run_asr(audio: np.ndarray, language: str | None) -> str:
     """Blocking ASR inference — runs on _ml_executor so MLX streams match."""
     import mlx.core as mx
     from mlx_audio.stt.generate import generate_transcription
     asr_model = _models.get_asr()
     audio_mx = mx.array(audio)
-    segments = generate_transcription(
-        model=asr_model, audio=audio_mx, task="transcribe", language=language
-    )
+    kwargs = {"task": "transcribe"}
+    if language is not None:
+        kwargs["language"] = language
+    segments = generate_transcription(model=asr_model, audio=audio_mx, **kwargs)
     if segments is None:
         return ""
     if isinstance(segments, list):
@@ -124,23 +125,30 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
     )
 
     loop = asyncio.get_event_loop()
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    queue: asyncio.Queue[str | dict | None] = asyncio.Queue()
 
     def _generate():
+        prompt_tokens = len(tokenizer.encode(prompt))
+        generation_tokens = 0
         try:
             for response in stream_generate(model, tokenizer, prompt, max_tokens=max_tokens):
                 text = response.text if hasattr(response, "text") else str(response)
                 queue.put_nowait(text)
+                generation_tokens += 1
         finally:
+            queue.put_nowait({"prompt_tokens": prompt_tokens, "generation_tokens": generation_tokens})
             queue.put_nowait(None)
 
     loop.run_in_executor(_ml_executor, _generate)
 
     while True:
-        token = await queue.get()
-        if token is None:
+        item = await queue.get()
+        if item is None:
             break
-        yield f"data: {json.dumps({'token': token})}\n\n"
+        if isinstance(item, dict):
+            yield f"data: {json.dumps({'usage': item})}\n\n"
+        else:
+            yield f"data: {json.dumps({'token': item})}\n\n"
 
     yield "data: [DONE]\n\n"
 

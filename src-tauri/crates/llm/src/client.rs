@@ -28,8 +28,6 @@ impl ChatMessage {
 }
 
 /// Parsed from every SSE token emitted by /llm/chat.
-/// The LLM is instructed to emit a final JSON object containing the full
-/// structured response once it has finished generating.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TutorToken {
     pub token: String,
@@ -42,6 +40,24 @@ pub struct TutorResponse {
     pub response: String,
     pub milestone: bool,
 }
+
+/// Actual token counts reported by the sidecar at end of stream.
+#[derive(Debug, Clone, Default)]
+pub struct ChatUsage {
+    pub prompt_tokens:     u32,
+    pub generation_tokens: u32,
+}
+
+/// Items emitted by `chat_stream`.
+pub enum StreamItem {
+    Token(String),
+    Usage(ChatUsage),
+}
+
+#[derive(Deserialize)]
+struct UsagePayload { prompt_tokens: u32, generation_tokens: u32 }
+#[derive(Deserialize)]
+struct UsageEvent   { usage: UsagePayload }
 
 // ---------------------------------------------------------------------------
 // SidecarClient
@@ -94,12 +110,12 @@ impl SidecarClient {
         Ok(resp.transcript)
     }
 
-    /// Send a conversation history to the LLM and stream tokens back.
-    /// The caller collects tokens and assembles the full TutorResponse.
+    /// Send a conversation history to the LLM and stream items back.
+    /// Each item is either a `Token(String)` or a final `Usage(ChatUsage)`.
     pub async fn chat_stream(
         &self,
         messages: &[ChatMessage],
-    ) -> Result<impl Stream<Item = Result<String>>> {
+    ) -> Result<impl Stream<Item = Result<StreamItem>>> {
         #[derive(Serialize)]
         struct Req<'a> { messages: &'a [ChatMessage] }
 
@@ -114,23 +130,29 @@ impl SidecarClient {
 
         let byte_stream = resp.bytes_stream();
 
-        let token_stream = byte_stream.map(|chunk| -> Result<String> {
+        let stream = byte_stream.map(|chunk| -> Result<StreamItem> {
             let bytes = chunk.context("stream read error")?;
             let text = std::str::from_utf8(&bytes).context("invalid UTF-8 in stream")?;
 
-            // SSE lines look like: `data: {"token": "..."}\n\n` or `data: [DONE]\n\n`
+            // SSE lines: `data: {"token": "..."}`, `data: {"usage": {...}}`, `data: [DONE]`
             let mut tokens = String::new();
             for line in text.lines() {
                 let Some(data) = line.strip_prefix("data: ") else { continue };
                 if data == "[DONE]" { break; }
+                if let Ok(u) = serde_json::from_str::<UsageEvent>(data) {
+                    return Ok(StreamItem::Usage(ChatUsage {
+                        prompt_tokens:     u.usage.prompt_tokens,
+                        generation_tokens: u.usage.generation_tokens,
+                    }));
+                }
                 if let Ok(t) = serde_json::from_str::<TutorToken>(data) {
                     tokens.push_str(&t.token);
                 }
             }
-            Ok(tokens)
+            Ok(StreamItem::Token(tokens))
         });
 
-        Ok(token_stream)
+        Ok(stream)
     }
 
     /// Send text to the TTS endpoint, receive WAV bytes back.
@@ -197,7 +219,6 @@ impl Default for SidecarClient {
 // ---------------------------------------------------------------------------
 
 fn base64_encode(data: &[u8]) -> String {
-    use std::io::Write;
     // Use the standard base64 alphabet without padding differences
     const TABLE: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

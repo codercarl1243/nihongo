@@ -47,9 +47,12 @@ async fn main() -> anyhow::Result<()> {
     step(4, "LLM stream  (first call may take 30–60s)");
     let mut full_text = String::new();
     {
+        use llm::StreamItem;
         let mut stream = llm.chat_stream(&messages).await?;
-        while let Some(chunk) = stream.next().await {
-            full_text.push_str(&chunk?);
+        while let Some(item) = stream.next().await {
+            if let StreamItem::Token(tok) = item? {
+                full_text.push_str(&tok);
+            }
         }
     }
     let tutor_resp = parse_response_pub(&full_text);

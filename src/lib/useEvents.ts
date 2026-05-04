@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useEffect } from 'react';
+import { getSidecarReady } from './api';
 import { useAppStore } from './store';
 
 export default function useEvents() {
@@ -7,6 +8,7 @@ export default function useEvents() {
     const appendToken      = useAppStore((s) => s.appendToken);
     const finalizeStream   = useAppStore((s) => s.finalizeStream);
     const setSessionStatus = useAppStore((s) => s.setSessionStatus);
+    const setPromptTokens  = useAppStore((s) => s.setPromptTokens);
 
     useEffect(() => {
         // `cancelled` guards against the React StrictMode double-mount pattern:
@@ -30,10 +32,11 @@ export default function useEvents() {
                     addMessage('user', e.payload.text)
                 }
                 ),
-                    listen<{ full_response: string; milestone: boolean }>('response_done', (e) =>{
+                    listen<{ full_response: string; milestone: boolean; prompt_tokens: number }>('response_done', (e) =>{
                     console.log("[backend] response_done:", e);
-                    finalizeStream(e.payload.full_response)}
-                ),
+                    finalizeStream(e.payload.full_response);
+                    setPromptTokens(e.payload.prompt_tokens);
+                }),
                 listen<{ greeting: string }>('session_ready', (e) =>{
                     console.log("[backend] session_ready:", e);
                     setSessionStatus('ready')}
@@ -52,6 +55,14 @@ export default function useEvents() {
             }
 
             cleanup.push(...fns);
+
+            // The sidecar_status: ready event may have fired before listeners
+            // were registered (race on startup). Query the current flag so we
+            // don't get stuck on 'warming_up' when the sidecar was already up.
+            const ready = await getSidecarReady();
+            if (!cancelled && ready) {
+                setSessionStatus('idle');
+            }
         }
 
         register();
@@ -60,5 +71,5 @@ export default function useEvents() {
             cancelled = true;
             cleanup.forEach((fn) => fn());
         };
-    }, [addMessage, appendToken, finalizeStream, setSessionStatus]);
+    }, [addMessage, appendToken, finalizeStream, setSessionStatus, setPromptTokens]);
 }
