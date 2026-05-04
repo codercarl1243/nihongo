@@ -224,30 +224,21 @@ async fn handle_turn(
     let state = app.state::<AppState>();
 
     // ── 1. ASR ──────────────────────────────────────────────────────────────
-    // Beginners (N5/N4) speak mostly English → "en" keeps "hello" as "hello".
-    // Intermediate/advanced (N3–N1) mix Japanese → "ja" handles code-switching.
-    // A hard language constraint prevents Whisper drifting to Hindi, Cantonese, etc.
-    let asr_language = {
-        let db = state.db.lock().unwrap();
-        match db.session_context().map(|c| c.profile.current_level).unwrap_or(5) {
-            1 | 2 | 3 => "ja",
-            _          => "en",
-        }
-    };
-    let raw_transcript = llm.transcribe(&normalize_peak(&audio), Some(asr_language)).await?;
-    eprintln!("[asr] language={asr_language} raw={raw_transcript:?}");
+    // No hard language constraint — let the model auto-detect per utterance so
+    // Japanese and English are both transcribed in their native script.
+    // The normalizer pass below converts any romaji that slips through.
+    let raw_transcript = llm.transcribe(&normalize_peak(&audio), None).await?;
+    eprintln!("[asr] raw={raw_transcript:?}");
 
-    // For English-mode ASR (beginner learners), normalize any romanized Japanese
-    // words the user deliberately spoke (e.g. "arigatou" → "ありがとう").
-    let transcript = if asr_language == "en" {
+    // Normalize romaji Japanese words to kanji/kana (e.g. "arigatou" → "ありがとう").
+    // The normalizer leaves pure English and already-native Japanese unchanged.
+    let transcript = {
         let normalized = llm.normalize_transcript(&raw_transcript).await.unwrap_or_else(|e| {
             eprintln!("[normalize] failed: {e}");
             raw_transcript.clone()
         });
         eprintln!("[normalize] raw={raw_transcript:?} → normalized={normalized:?}");
         normalized
-    } else {
-        raw_transcript
     };
     if transcript.trim().is_empty() {
         return Ok(());
