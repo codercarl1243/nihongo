@@ -227,13 +227,17 @@ async fn handle_turn(
     // No hard language constraint — let the model auto-detect per utterance so
     // Japanese and English are both transcribed in their native script.
     // The normalizer pass below converts any romaji that slips through.
+    let learner_level = {
+        let db = state.db.lock().unwrap();
+        db.session_context().map(|c| c.profile.current_level).unwrap_or(5)
+    };
     let raw_transcript = llm.transcribe(&normalize_peak(&audio), None).await?;
-    eprintln!("[asr] raw={raw_transcript:?}");
+    eprintln!("[asr] level={learner_level} raw={raw_transcript:?}");
 
-    // Normalize romaji Japanese words to kanji/kana (e.g. "arigatou" → "ありがとう").
-    // The normalizer leaves pure English and already-native Japanese unchanged.
+    // Normalize romaji to kana/kanji at the learner's level — beginners get
+    // hiragana only, intermediate gets common kanji, advanced gets full kanji.
     let transcript = {
-        let normalized = llm.normalize_transcript(&raw_transcript).await.unwrap_or_else(|e| {
+        let normalized = llm.normalize_transcript(&raw_transcript, learner_level).await.unwrap_or_else(|e| {
             eprintln!("[normalize] failed: {e}");
             raw_transcript.clone()
         });

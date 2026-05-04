@@ -160,17 +160,17 @@ impl SidecarClient {
         Ok(stream)
     }
 
-    /// Convert romanized Japanese words in an English transcript to kanji/kana.
-    /// Pure English words are left unchanged.
-    pub async fn normalize_transcript(&self, text: &str) -> Result<String> {
+    /// Convert romanized Japanese words to kana/kanji appropriate for the learner's level.
+    /// Pure English words are left unchanged. `level` is JLPT 1–5 (5 = beginner).
+    pub async fn normalize_transcript(&self, text: &str, level: u8) -> Result<String> {
         #[derive(Serialize)]
-        struct Req<'a> { text: &'a str }
+        struct Req<'a> { text: &'a str, level: u8 }
         #[derive(Deserialize)]
         struct Resp { normalized: String }
 
         let resp: Resp = self.http
             .post(format!("{}/llm/normalize", self.base))
-            .json(&Req { text })
+            .json(&Req { text, level })
             .send()
             .await
             .context("normalize request failed")?

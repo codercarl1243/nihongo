@@ -164,6 +164,7 @@ async def _stream_chat(messages: list[dict], max_tokens: int) -> AsyncGenerator[
 
 class NormalizeRequest(BaseModel):
     text: str
+    level: int = 5  # JLPT level 1–5 (5 = beginner, 1 = advanced)
 
 
 class NormalizeResponse(BaseModel):
@@ -173,20 +174,36 @@ class NormalizeResponse(BaseModel):
 @app.post("/llm/normalize", response_model=NormalizeResponse)
 async def normalize(req: NormalizeRequest):
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(_ml_executor, _run_normalize, req.text)
+    result = await loop.run_in_executor(_ml_executor, _run_normalize, req.text, req.level)
     return NormalizeResponse(normalized=result)
 
 
-def _run_normalize(text: str) -> str:
-    """Convert romanized Japanese words in an English sentence to kanji/kana."""
+def _run_normalize(text: str, level: int) -> str:
+    """Convert romanized Japanese words to kana/kanji appropriate for the learner's level."""
     from mlx_lm import generate
     tokenizer = _models.llm_tokenizer
     model = _models.llm_model
+
+    if level >= 4:
+        script_rule = (
+            "Write all Japanese using hiragana and katakana only. Do not use any kanji."
+        )
+    elif level == 3:
+        script_rule = (
+            "Use hiragana, katakana, and common everyday kanji (N3 level and below). "
+            "Convert unfamiliar kanji to hiragana."
+        )
+    else:
+        script_rule = (
+            "Use kanji, hiragana, and katakana naturally as a native speaker would."
+        )
+
     messages = [
         {"role": "system", "content": (
             "You are a Japanese script converter. "
             "Rewrite the user's text, converting any romanized Japanese words or phrases "
-            "to their native kanji/kana form. Leave all English words unchanged. "
+            "to their Japanese form. Leave all English words unchanged. "
+            f"{script_rule} "
             "Return only the rewritten text with no explanation."
         )},
         {"role": "user", "content": text},

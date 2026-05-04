@@ -24,15 +24,19 @@ const INSTRUCTION_LANGUAGE_N5_N4: &str =
     "\n\nInstruction language: The student is a beginner and understands little or no \
      Japanese. Conduct the lesson in English. When you introduce a Japanese word or \
      phrase, say it in Japanese then immediately give the English meaning in parentheses. \
-     Never reply to an English question with a Japanese-only sentence.";
+     Never reply to an English question with a Japanese-only sentence.\
+     \n\nScript: Write all Japanese using hiragana and katakana only. Do not use any kanji.";
 
 const INSTRUCTION_LANGUAGE_N3: &str =
     "\n\nInstruction language: Mix English and Japanese. Use simple Japanese sentences \
-     the student knows, but fall back to English for explanations. Always gloss new words.";
+     the student knows, but fall back to English for explanations. Always gloss new words.\
+     \n\nScript: Use hiragana, katakana, and common everyday kanji (N3 level and below). \
+     Write less familiar kanji in hiragana.";
 
 const INSTRUCTION_LANGUAGE_N2_N1: &str =
     "\n\nInstruction language: Conduct the lesson in Japanese. Use English only when \
-     explicitly asked or when a grammar point cannot be expressed otherwise.";
+     explicitly asked or when a grammar point cannot be expressed otherwise.\
+     \n\nScript: Use kanji, hiragana, and katakana naturally as a native speaker would.";
 
 pub fn build_system_prompt_pub(ctx: &SessionContext) -> ChatMessage {
     build_system_prompt(ctx)
