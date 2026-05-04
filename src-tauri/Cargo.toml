@@ -14,6 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "integration"
 path = "src/bin/integration.rs"
 
+[[bin]]
+name = "test_pipeline"
+path = "src/bin/test_pipeline.rs"
+
 [workspace]
 members = [
     ".",
