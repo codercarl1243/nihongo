@@ -5,6 +5,7 @@ use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::time::{Duration, Instant};
 use std::thread;
 
+use crate::aec::{AecProcessor, AecSink, create_aec_pair};
 use crate::capture::AudioCapture;
 use crate::resampler::Resampler16k;
 use crate::vad::SpeechDetector;
@@ -47,6 +48,9 @@ pub struct AudioStreams {
     /// [PIPELINE_DEBUG] VAD state change labels for the pipeline indicator UI.
     /// Carries stage name strings (e.g. "VAD 1: Speech Detected").
     pub vad_state: ReceiverStream<&'static str>,
+    /// Feed every audio chunk sent to the speaker into this sink so the AEC can
+    /// cancel its echo from the microphone signal.
+    pub aec_sink: AecSink,
 }
 
 pub struct AudioManager {
@@ -123,6 +127,7 @@ impl AudioManager {
         let (partial_tx, partial_rx) = mpsc::channel::<Vec<f32>>(8);
         let (turn_tx, turn_rx) = mpsc::channel::<Vec<f32>>(8);
         let (vad_tx, vad_rx) = mpsc::channel::<&'static str>(16); // [PIPELINE_DEBUG]
+        let (aec_sink, aec_proc) = create_aec_pair()?;
 
         self.is_running.store(true, Ordering::SeqCst);
         let running      = self.is_running.clone();
@@ -131,15 +136,16 @@ impl AudioManager {
         let threshold_ms = self.silence_threshold_ms.clone();
 
         thread::spawn(move || {
-            if let Err(e) = Self::run_loop(partial_tx, turn_tx, vad_tx, running, muted, barge_in, threshold_ms, config) {
+            if let Err(e) = Self::run_loop(partial_tx, turn_tx, vad_tx, aec_proc, running, muted, barge_in, threshold_ms, config) {
                 eprintln!("[manager] loop error: {}", e);
             }
         });
 
         Ok(AudioStreams {
-            partial: ReceiverStream::new(partial_rx),
-            turn_end: ReceiverStream::new(turn_rx),
+            partial:   ReceiverStream::new(partial_rx),
+            turn_end:  ReceiverStream::new(turn_rx),
             vad_state: ReceiverStream::new(vad_rx), // [PIPELINE_DEBUG]
+            aec_sink,
         })
     }
 
@@ -147,6 +153,7 @@ impl AudioManager {
         partial_tx: mpsc::Sender<Vec<f32>>,
         turn_tx: mpsc::Sender<Vec<f32>>,
         vad_tx: mpsc::Sender<&'static str>, // [PIPELINE_DEBUG]
+        mut aec: AecProcessor,
         running: Arc<AtomicBool>,
         muted: Arc<AtomicBool>,
         barge_in: Arc<AtomicBool>,
@@ -265,6 +272,15 @@ impl AudioManager {
             // Echo tail: drain audio without feeding VAD while room echo may be present.
             if Instant::now() < echo_tail_until {
                 thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+
+            // AEC: cancel speaker echo before the VAD sees the signal.
+            // process_in_place accumulates samples until full 160-sample frames
+            // are available; it may return fewer samples than provided.
+            aec.process_in_place(&mut mono_16k);
+            if mono_16k.is_empty() {
+                thread::sleep(Duration::from_millis(5));
                 continue;
             }
 

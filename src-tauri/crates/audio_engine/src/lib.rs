@@ -50,12 +50,14 @@
 //!   * **vad_sensitivity**: 0.5,
 
 
+pub mod aec;
 pub mod capture;
 pub mod player;
 pub mod resampler;
 pub mod vad;
 pub mod manager;
 
+pub use aec::{AecSink, create_aec_pair};
 pub use manager::{AudioManager, EngineConfig};
 pub use capture::{AudioCapture, CaptureConfig};
 pub use player::AudioPlayer;

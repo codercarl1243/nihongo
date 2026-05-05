@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 use std::time::Duration;
 
-use audio_engine::{AudioManager, AudioPlayer, EngineConfig};
+use audio_engine::{AecSink, AudioManager, AudioPlayer, EngineConfig};
 use chrono::Timelike as _;
 use db::Db;
 use llm::{ChatMessage, ChatUsage, SidecarClient, StreamItem};
@@ -18,6 +18,7 @@ use tutor::{parse_response_pub, parse_summary_pub, TutorSession};
 struct AppState {
     audio:          Mutex<AudioManager>,
     player:         Mutex<AudioPlayer>,
+    aec_sink:       Mutex<Option<AecSink>>,   // AEC reference buffer — set on session start
     llm:            SidecarClient,
     db:             Mutex<Db>,
     session:        Mutex<Option<TutorSession>>,
@@ -72,7 +73,7 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
     };
 
     {
-        let mut audio = state.audio.lock().unwrap();
+        let audio = state.audio.lock().unwrap();
         audio.init_silence_threshold(silence_ms);
     }
 
@@ -80,6 +81,9 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
         .lock().unwrap()
         .start(EngineConfig::default())
         .map_err(|e| e.to_string())?;
+
+    // Store the AEC sink so play_chunk callers can push the speaker reference.
+    *state.aec_sink.lock().unwrap() = Some(streams.aec_sink);
 
     state.player.lock().unwrap().start().map_err(|e| e.to_string())?;
 
@@ -183,6 +187,10 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
         let pcm = wav_to_f32(&wav)?;
         let len = pcm.len();
         state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
+        // Push speaker reference so AEC can cancel this audio from the mic signal.
+        if let Some(ref sink) = *state.aec_sink.lock().unwrap() {
+            sink.push(&pcm, 24_000);
+        }
         Ok::<usize, anyhow::Error>(len)
     }.await;
 
@@ -326,6 +334,10 @@ async fn handle_turn(
             let pcm = wav_to_f32(&wav)?;
             total_samples += pcm.len();
             state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
+            // Push speaker reference so AEC can cancel this audio from the mic signal.
+            if let Some(ref sink) = *state.aec_sink.lock().unwrap() {
+                sink.push(&pcm, 24_000);
+            }
         }
         Ok::<(), anyhow::Error>(())
     }.await;
@@ -616,6 +628,7 @@ pub fn run() {
         .manage(AppState {
             audio:         Mutex::new(AudioManager::new()),
             player:        Mutex::new(AudioPlayer::new()),
+            aec_sink:      Mutex::new(None),
             llm:           SidecarClient::new(),
             db:            Mutex::new(db),
             session:       Mutex::new(None),

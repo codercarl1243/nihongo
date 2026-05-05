@@ -15,3 +15,5 @@ voice_activity_detector = "0.2.1"
 tokio = { version = "1", features = ["full", "time"] }
 tokio-stream = "0.1.18"
 anyhow = "1"
+webrtc-audio-processing = { version = "2.0.4", features = ["bundled"] }
+webrtc-audio-processing-config = "2.0.4"
