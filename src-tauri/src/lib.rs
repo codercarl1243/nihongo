@@ -544,7 +544,9 @@ fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
 
 /// Extract the next complete sentence from `buf` (up to 。！？!?), consuming it.
 fn flush_sentence(buf: &mut String) -> Option<String> {
-    const ENDS: &[char] = &['。', '！', '？', '!', '?'];
+    // Include '.' so English sentences flush independently rather than accumulating
+    // the entire response into one TTS request. Japanese sentences use 。 instead.
+    const ENDS: &[char] = &['。', '！', '？', '!', '?', '.'];
     let pos = buf.find(|c: char| ENDS.contains(&c))?;
     let end = pos + buf[pos..].chars().next().unwrap().len_utf8();
     let sentence = buf[..end].trim().to_string();

@@ -216,6 +216,11 @@ impl AudioManager {
         let mut barge_in_turn = false;
         let mut barge_remainder: Vec<f32> = Vec::new();
         let mut prev_muted = false;
+        // Debounce barge-in: require this many consecutive speech chunks before
+        // triggering. Echo artefacts are brief spikes; real user interruptions are
+        // sustained. At 512 samples / 16kHz = 32ms per chunk, 3 chunks ≈ 100ms.
+        let mut barge_speech_streak: u32 = 0;
+        const BARGE_IN_STREAK_REQUIRED: u32 = 3;
         // After TTS playback ends, suppress new turns briefly so room echo doesn't
         // get mistaken for user speech. Skipped when a barge-in already filled the buffer.
         let mut echo_tail_until = Instant::now();
@@ -245,6 +250,7 @@ impl AudioManager {
 
             // On unmute: flush barge-in audio (if any) or start an echo suppression window.
             if prev_muted && !is_muted {
+                barge_speech_streak = 0; // reset debounce for next TTS response
                 if !barge_buffer.is_empty() {
                     let audio = std::mem::take(&mut barge_buffer);
                     barge_in_turn = false;
@@ -308,18 +314,28 @@ impl AudioManager {
 
                 for chunk in mono_16k.chunks_exact(config.vad_window) {
                     if barge_in_active && barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
-                        if !barge_in_turn {
+                        barge_speech_streak += 1;
+                        if barge_in_turn {
+                            // Already confirmed — keep buffering.
+                            barge_buffer.extend_from_slice(chunk);
+                        } else if barge_speech_streak >= BARGE_IN_STREAK_REQUIRED {
+                            // Sustained speech confirmed — this is a real interruption.
                             barge_in_turn = true;
                             barge_buffer.clear();
-                            // Signal the pipeline to stop TTS early.
                             barge_in.store(true, Ordering::SeqCst);
                             vad_tx.try_send("VAD 2: Barge-In Detected").ok(); // [PIPELINE_DEBUG]
+                            barge_buffer.extend_from_slice(chunk);
                         }
-                        barge_buffer.extend_from_slice(chunk);
-                    } else if barge_in_turn {
-                        // Keep buffering trailing silence for context; the turn
-                        // boundary is determined on unmute, not during mute.
-                        barge_buffer.extend_from_slice(chunk);
+                        // else: streak building, not yet confirmed — don't buffer yet
+                    } else {
+                        // Non-speech chunk: reset the streak so only sustained
+                        // speech can confirm a barge-in.
+                        barge_speech_streak = 0;
+                        if barge_in_turn {
+                            // Keep buffering trailing silence for context; the turn
+                            // boundary is determined on unmute, not during mute.
+                            barge_buffer.extend_from_slice(chunk);
+                        }
                     }
                 }
 
