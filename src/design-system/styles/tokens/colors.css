@@ -47,7 +47,7 @@
     --cc-color-info-600: hsl(188, 76%, 20%);
 
     /* Neutral colors */
-    --cc-color-neutral-100: hsl(0, 0%, 100%);
+    --cc-color-neutral-100: hsl(35, 15%, 98%);
     --cc-color-neutral-200: hsl(0, 0%, 88%);
     --cc-color-neutral-300: hsl(0, 0%, 70%);
     --cc-color-neutral-400: hsl(0, 0%, 46%);
@@ -55,7 +55,7 @@
     --cc-color-neutral-600: hsl(0, 0%, 30%);
     --cc-color-neutral-700: hsl(0, 0%, 24%);
     --cc-color-neutral-800: hsl(0, 0%, 15%);
-    --cc-color-neutral-900: hsl(0, 0%, 0%);
+    --cc-color-neutral-900: hsl(220, 15%, 15%);
 
     --cc-color-code-bg: hsl(225, 13%, 13%);
     --cc-color-inline-bg: hsl(60, 33%, 99%);
@@ -67,16 +67,6 @@
     --cc-color-neutral-a7: color-mix(in srgb, var(--cc-foreground-on-surface) 70%, transparent);
     --cc-color-neutral-a9: color-mix(in srgb, var(--cc-foreground-on-surface) 90%, transparent);
 
-    /* Emphasis colors */
-    --cc-color-emphasis-100: hsl(16, 84%, 60%);
-    --cc-color-emphasis-200: hsl(262, 84%, 75%);
-    --cc-color-emphasis-300: hsl(172, 66%, 50%);
-    --cc-color-emphasis-400: hsl(75, 85%, 60%);
-    --cc-color-emphasis-500: hsl(330, 82%, 71%);
-    --cc-color-emphasis-600: hsl(198, 93%, 60%);
-    --cc-color-emphasis-700: hsl(142, 71%, 45%);
-    --cc-color-emphasis-800: hsl(234, 89%, 74%);
-    --cc-color-emphasis-900: hsl(45, 93%, 58%);
 
     /* Interactive element colors */
     --cc-color-link-100: hsl(218, 61%, 92%);
