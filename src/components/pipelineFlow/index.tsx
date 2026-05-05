@@ -1,6 +1,7 @@
 // [PIPELINE_DEBUG] — delete this file when pipeline indicators are no longer needed
 
 import { Fragment } from 'react';
+import { Inline } from '../../design-system/primitives';
 
 // Echo: Suppressing is emitted by the backend but intentionally omitted from this
 // display — it's an internal AudioManager detail, not a user-visible pipeline step.
@@ -24,7 +25,7 @@ interface PipelineFlowProps {
 
 export default function PipelineFlow({ stage }: PipelineFlowProps) {
     return (
-        <div className="pipeline-flow">
+        <Inline align="center" variant="inverse" variantAppearance='outlined' paint="foreground" className="pipeline-flow py-sm px-0">
             {STAGES.map((s, i) => (
                 <Fragment key={s}>
                     <span className={`pipeline-step${s === stage ? ' active' : ''}`}>
@@ -35,6 +36,6 @@ export default function PipelineFlow({ stage }: PipelineFlowProps) {
                     )}
                 </Fragment>
             ))}
-        </div>
+        </Inline>
     );
 }

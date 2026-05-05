@@ -11,7 +11,7 @@ type Props = {
 
 export default function SessionButton({ status, onStart, onStop }: Props) {
     if (status === 'warming_up') {
-        return <Button isLoading>Loading models…</Button>;
+        return <Button isLoading>Warming Up…</Button>;
     }
 
     if (status === 'idle') {
