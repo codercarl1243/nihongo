@@ -23,6 +23,13 @@ pub struct EngineConfig {
     /// Short TTS responses (e.g. greetings) complete within this window, effectively
     /// disabling barge-in for them while still allowing interruption on longer replies.
     pub barge_in_start_delay: Duration,
+    /// Minimum post-AEC RMS a chunk must have to count toward the barge-in streak.
+    ///
+    /// AEC leaves residual echo spikes of ~0.01–0.02 RMS on loud phonemes. User
+    /// speech at a MacBook mic from normal distance is typically 0.05+. A threshold
+    /// of 0.025 rejects residual echo while passing genuine user speech.
+    /// Increase if a quiet speaker is not triggering barge-in; decrease if echo still does.
+    pub barge_in_rms_threshold: f32,
 }
 
 impl Default for EngineConfig {
@@ -33,6 +40,7 @@ impl Default for EngineConfig {
             vad_sensitivity: 0.5,
             partial_chunk_samples: 16_000, // emit partial every ~1s of speech
             barge_in_start_delay: Duration::from_millis(700),
+            barge_in_rms_threshold: 0.025, // rejects AEC residual echo (~0.02), passes user speech (~0.05+)
         }
     }
 }
@@ -321,13 +329,21 @@ impl AudioManager {
                 };
 
                 for chunk in mono_16k.chunks_exact(config.vad_window) {
-                    if barge_in_active && barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
+                    // Energy gate: residual AEC echo peaks at ~0.02 RMS; user speech
+                    // at normal mic distance is ~0.05+. Only count chunks that clear
+                    // both the energy floor and the VAD toward the barge-in streak.
+                    let rms = (chunk.iter().map(|s| s * s).sum::<f32>()
+                        / chunk.len() as f32)
+                        .sqrt();
+                    let energy_ok = rms >= config.barge_in_rms_threshold;
+
+                    if barge_in_active && energy_ok && barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
                         barge_speech_streak += 1;
                         if barge_in_turn {
                             // Already confirmed — keep buffering.
                             barge_buffer.extend_from_slice(chunk);
                         } else if barge_speech_streak >= BARGE_IN_STREAK_REQUIRED {
-                            // Sustained speech confirmed — this is a real interruption.
+                            // Sustained loud speech confirmed — this is a real interruption.
                             barge_in_turn = true;
                             barge_buffer.clear();
                             barge_in.store(true, Ordering::SeqCst);
@@ -336,8 +352,8 @@ impl AudioManager {
                         }
                         // else: streak building, not yet confirmed — don't buffer yet
                     } else {
-                        // Non-speech chunk: reset the streak so only sustained
-                        // speech can confirm a barge-in.
+                        // Chunk failed energy gate or VAD: reset streak so only sustained
+                        // loud speech can confirm a barge-in.
                         barge_speech_streak = 0;
                         if barge_in_turn {
                             // Keep buffering trailing silence for context; the turn
