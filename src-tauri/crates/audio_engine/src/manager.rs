@@ -218,9 +218,10 @@ impl AudioManager {
         let mut prev_muted = false;
         // Debounce barge-in: require this many consecutive speech chunks before
         // triggering. Echo artefacts are brief spikes; real user interruptions are
-        // sustained. At 512 samples / 16kHz = 32ms per chunk, 3 chunks ≈ 100ms.
+        // sustained. At 512 samples / 16kHz = 32ms per chunk, 6 chunks ≈ 192ms —
+        // enough to outlast typical room reverb from a laptop speaker.
         let mut barge_speech_streak: u32 = 0;
-        const BARGE_IN_STREAK_REQUIRED: u32 = 3;
+        const BARGE_IN_STREAK_REQUIRED: u32 = 6;
         // After TTS playback ends, suppress new turns briefly so room echo doesn't
         // get mistaken for user speech. Skipped when a barge-in already filled the buffer.
         let mut echo_tail_until = Instant::now();
@@ -288,6 +289,13 @@ impl AudioManager {
                 if mono_16k.is_empty() {
                     thread::sleep(Duration::from_millis(5));
                     continue;
+                }
+                // Log post-AEC RMS so we can verify echo cancellation is reducing the signal.
+                // If AEC is working: RMS should be very low (~0.001–0.005) during TTS playback.
+                // If AEC is not working: RMS will match the raw echo level (~0.01–0.1).
+                {
+                    let rms = (mono_16k.iter().map(|s| s * s).sum::<f32>() / mono_16k.len() as f32).sqrt();
+                    eprintln!("[aec] post-AEC RMS: {:.4}", rms);
                 }
 
                 Self::align_windows(&mut mono_16k, &mut barge_remainder, config.vad_window);
