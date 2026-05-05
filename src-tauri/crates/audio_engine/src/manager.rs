@@ -230,6 +230,17 @@ impl AudioManager {
                     Err(e) => return Err(e),
                 };
 
+                // AEC: cancel speaker echo so barge_vad only sees real user speech.
+                // While muted, the render buffer has active TTS data — cancellation is valid.
+                // In the unmuted path there is no speaker output, so AEC is not applied there
+                // (feeding zeros as reference would suppress the user's voice instead).
+                eprintln!("[aec] active — processing {} samples", mono_16k.len());
+                aec.process_in_place(&mut mono_16k);
+                if mono_16k.is_empty() {
+                    thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
+
                 Self::align_windows(&mut mono_16k, &mut barge_remainder, config.vad_window);
 
                 // Skip barge-in detection during the startup window: the mic captures
@@ -275,15 +286,9 @@ impl AudioManager {
                 continue;
             }
 
-            // AEC: cancel speaker echo before the VAD sees the signal.
-            // process_in_place accumulates samples until full 160-sample frames
-            // are available; it may return fewer samples than provided.
-            aec.process_in_place(&mut mono_16k);
-            if mono_16k.is_empty() {
-                thread::sleep(Duration::from_millis(5));
-                continue;
-            }
-
+            // AEC is NOT applied here: in the unmuted path no TTS is playing, so the
+            // render ring buffer is empty. Feeding zeros as the AEC reference would
+            // cause AEC3 to suppress the user's voice. AEC runs in the muted path only.
             Self::align_windows(&mut mono_16k, &mut remainder, config.vad_window);
 
             for chunk in mono_16k.chunks_exact(config.vad_window) {
