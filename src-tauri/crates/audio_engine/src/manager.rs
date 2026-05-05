@@ -59,6 +59,10 @@ pub struct AudioManager {
     barge_in:             Arc<AtomicBool>,
     silence_threshold_ms: Arc<AtomicU64>,
     silence_default_ms:   Arc<AtomicU64>,
+    /// Unix-epoch milliseconds when audio actually started playing (first play_chunk call).
+    /// Zero means no audio has started yet; barge-in detection is suppressed while zero.
+    /// Reset to zero on every mute() so stale timestamps from previous turns don't leak.
+    audio_play_started:   Arc<AtomicU64>,
 }
 
 impl AudioManager {
@@ -70,6 +74,7 @@ impl AudioManager {
             barge_in:             Arc::new(AtomicBool::new(false)),
             silence_threshold_ms: Arc::new(AtomicU64::new(default_ms)),
             silence_default_ms:   Arc::new(AtomicU64::new(default_ms)),
+            audio_play_started:   Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -78,8 +83,33 @@ impl AudioManager {
     }
 
     /// Discard all incoming audio — call before TTS playback to prevent echo.
+    /// Also resets the play-started timestamp so barge-in stays suppressed until
+    /// the first actual play_chunk call on this turn completes.
     pub fn mute(&self) {
         self.muted.store(true, Ordering::SeqCst);
+        self.audio_play_started.store(0, Ordering::SeqCst);
+    }
+
+    /// Signal that audio has actually started reaching the speaker on this turn.
+    /// Call this immediately after every play_chunk() call — it is idempotent:
+    /// only the first call per turn records the timestamp (subsequent calls are
+    /// no-ops because mute() resets the field to 0 at the start of each turn).
+    /// Barge-in detection will not activate until `barge_in_start_delay` has
+    /// elapsed from this moment — not from when mute() was called.
+    pub fn signal_audio_started(&self) {
+        // Only record the first call per turn (mute() resets to 0).
+        if self.audio_play_started.load(Ordering::SeqCst) != 0 {
+            return;
+        }
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        // Use compare-exchange so two concurrent callers don't both set it.
+        let _ = self.audio_play_started.compare_exchange(
+            0, now_ms, Ordering::SeqCst, Ordering::SeqCst,
+        );
     }
 
     /// Resume capture after TTS playback finishes.
@@ -130,13 +160,14 @@ impl AudioManager {
         let (aec_sink, aec_proc) = create_aec_pair()?;
 
         self.is_running.store(true, Ordering::SeqCst);
-        let running      = self.is_running.clone();
-        let muted        = self.muted.clone();
-        let barge_in     = self.barge_in.clone();
-        let threshold_ms = self.silence_threshold_ms.clone();
+        let running            = self.is_running.clone();
+        let muted              = self.muted.clone();
+        let barge_in           = self.barge_in.clone();
+        let threshold_ms       = self.silence_threshold_ms.clone();
+        let audio_play_started = self.audio_play_started.clone();
 
         thread::spawn(move || {
-            if let Err(e) = Self::run_loop(partial_tx, turn_tx, vad_tx, aec_proc, running, muted, barge_in, threshold_ms, config) {
+            if let Err(e) = Self::run_loop(partial_tx, turn_tx, vad_tx, aec_proc, running, muted, barge_in, threshold_ms, audio_play_started, config) {
                 eprintln!("[manager] loop error: {}", e);
             }
         });
@@ -158,6 +189,7 @@ impl AudioManager {
         muted: Arc<AtomicBool>,
         barge_in: Arc<AtomicBool>,
         threshold_ms: Arc<AtomicU64>,
+        audio_play_started: Arc<AtomicU64>,
         config: EngineConfig,
     ) -> Result<()> {
         let (capture, mut consumer) = AudioCapture::start()?;
@@ -184,10 +216,6 @@ impl AudioManager {
         let mut barge_in_turn = false;
         let mut barge_remainder: Vec<f32> = Vec::new();
         let mut prev_muted = false;
-        // Timestamp when we entered muted state. Barge-in detection is suppressed
-        // until barge_in_start_delay has elapsed to avoid treating the speaker
-        // echo as an interruption.
-        let mut muted_since = Instant::now();
         // After TTS playback ends, suppress new turns briefly so room echo doesn't
         // get mistaken for user speech. Skipped when a barge-in already filled the buffer.
         let mut echo_tail_until = Instant::now();
@@ -195,10 +223,7 @@ impl AudioManager {
         while running.load(Ordering::SeqCst) {
             let is_muted = muted.load(Ordering::SeqCst);
 
-            // Record when TTS playback starts so barge-in delay is measured from mute onset.
-            if !prev_muted && is_muted {
-                muted_since = Instant::now();
-            }
+            // (audio_play_started is reset inside mute() — no extra bookkeeping needed here)
 
             // On unmute: flush barge-in audio (if any) or start an echo suppression window.
             if prev_muted && !is_muted {
@@ -243,10 +268,25 @@ impl AudioManager {
 
                 Self::align_windows(&mut mono_16k, &mut barge_remainder, config.vad_window);
 
-                // Skip barge-in detection during the startup window: the mic captures
-                // the speaker output directly for the first few hundred ms, so any
-                // speech detected here is echo rather than the user interrupting.
-                let barge_in_active = muted_since.elapsed() >= config.barge_in_start_delay;
+                // Barge-in detection is gated on two conditions:
+                // 1. audio has actually started playing (audio_play_started != 0)
+                // 2. barge_in_start_delay has elapsed since the first play_chunk call
+                // This means synthesis latency no longer "eats into" the delay window —
+                // the delay only starts once audio is actually hitting the speaker.
+                let barge_in_active = {
+                    use std::time::{SystemTime, UNIX_EPOCH};
+                    let started_ms = audio_play_started.load(Ordering::SeqCst);
+                    if started_ms == 0 {
+                        false // audio hasn't started yet; still synthesising
+                    } else {
+                        let now_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        now_ms.saturating_sub(started_ms)
+                            >= config.barge_in_start_delay.as_millis() as u64
+                    }
+                };
 
                 for chunk in mono_16k.chunks_exact(config.vad_window) {
                     if barge_in_active && barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {

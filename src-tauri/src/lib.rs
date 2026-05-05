@@ -191,6 +191,10 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
         if let Some(ref sink) = *state.aec_sink.lock().unwrap() {
             sink.push(&pcm, 24_000);
         }
+        // Signal that audio is now actually reaching the speaker so barge-in delay
+        // is measured from this moment, not from when mute() was called (which
+        // happens before TTS synthesis and would let synthesis latency eat the delay).
+        state.audio.lock().unwrap().signal_audio_started();
         Ok::<usize, anyhow::Error>(len)
     }.await;
 
@@ -338,6 +342,10 @@ async fn handle_turn(
             if let Some(ref sink) = *state.aec_sink.lock().unwrap() {
                 sink.push(&pcm, 24_000);
             }
+            // Signal that audio is now actually reaching the speaker so barge-in delay
+            // is measured from this moment, not from when mute() was called (before synthesis).
+            // signal_audio_started is idempotent — only the first call sets the timestamp.
+            state.audio.lock().unwrap().signal_audio_started();
         }
         Ok::<(), anyhow::Error>(())
     }.await;

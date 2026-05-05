@@ -121,8 +121,12 @@ pub fn create_aec_pair() -> Result<(AecSink, AecProcessor)> {
     let processor = Processor::new(16_000)
         .map_err(|e| anyhow::anyhow!("WebRTC AEC init failed: {:?}", e))?;
 
+    // stream_delay_ms: typical speaker→room→mic round-trip on a laptop is 50–150ms.
+    // Providing a starting estimate lets AEC3 converge immediately rather than
+    // spending the first several seconds estimating the delay blindly — important
+    // for short TTS clips where the audio may finish before AEC3 has converged.
     processor.set_config(Config {
-        echo_canceller: Some(EchoCanceller::default()),
+        echo_canceller: Some(EchoCanceller::Full { stream_delay_ms: Some(100) }),
         ..Default::default()
     });
 
