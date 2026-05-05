@@ -70,6 +70,21 @@ pub struct AecProcessor {
 }
 
 impl AecProcessor {
+    /// Update the render-to-capture stream delay estimate used by AEC3.
+    ///
+    /// Call once after measuring the actual hardware latency — typically
+    /// `input_latency_ms * 2 + 5` (output buffer + room travel + input buffer).
+    /// Safe to call while processing is in progress; `set_config` is applied
+    /// before the next frame.
+    pub fn update_stream_delay(&mut self, delay_ms: u32) {
+        self.processor.set_config(Config {
+            echo_canceller: Some(EchoCanceller::Full {
+                stream_delay_ms: Some(delay_ms.min(u16::MAX as u32) as u16),
+            }),
+            ..Default::default()
+        });
+    }
+
     /// Cancel speaker echo from `samples` (16 kHz mono mic audio) in-place.
     ///
     /// Accumulates samples internally until full 160-sample (10 ms) frames are
@@ -121,12 +136,12 @@ pub fn create_aec_pair() -> Result<(AecSink, AecProcessor)> {
     let processor = Processor::new(16_000)
         .map_err(|e| anyhow::anyhow!("WebRTC AEC init failed: {:?}", e))?;
 
-    // stream_delay_ms: typical speaker→room→mic round-trip on a laptop is 50–150ms.
-    // Providing a starting estimate lets AEC3 converge immediately rather than
-    // spending the first several seconds estimating the delay blindly — important
-    // for short TTS clips where the audio may finish before AEC3 has converged.
+    // stream_delay_ms: conservative initial estimate (20ms ≈ one hardware buffer).
+    // The audio thread measures the actual input latency from InputCallbackInfo
+    // and calls update_stream_delay() within the first callback (~10ms), so this
+    // value is only used for the very first few AEC frames.
     processor.set_config(Config {
-        echo_canceller: Some(EchoCanceller::Full { stream_delay_ms: Some(100) }),
+        echo_canceller: Some(EchoCanceller::Full { stream_delay_ms: Some(20u16) }),
         ..Default::default()
     });
 

@@ -152,6 +152,15 @@ After a drill prompt ("try saying…", "repeat after me"), the threshold tighten
 **Echo tail suppression**
 After TTS playback finishes and the mic unmutes, VAD is suppressed for 400ms to let room echo decay before turn detection resumes. If the user barges in during TTS, the barge buffer is flushed immediately and the suppression window is skipped.
 
+**Acoustic Echo Cancellation (AEC3)**
+WebRTC AEC3 (`webrtc-audio-processing`) runs on the mic signal during TTS playback, subtracting the known speaker output before `barge_vad` sees it. The speaker reference is fed via `AecSink::push()` alongside every `play_chunk()` call. AEC only runs in the muted path — when no TTS is playing the render buffer is empty and AEC would suppress the user's voice.
+
+**AEC stream delay (auto-calibrated)**
+AEC3 requires a `stream_delay_ms` hint — how many milliseconds the render (speaker) reference leads the mic capture signal. On session start the audio thread measures the hardware input buffer period from `InputCallbackInfo` timestamps (`callback − capture`) and sets `stream_delay_ms = input_latency × 2 + 5ms` (output buffer ≈ input buffer on macOS built-in audio; 5ms for room travel). This updates AEC3 within the first callback, roughly 10ms after capture starts.
+
+**TODO — acoustic calibration on every startup**
+The current estimate assumes output and input buffer sizes are equal, which holds for a MacBook's built-in audio but is not guaranteed on external devices. A more accurate calibration: at startup, before the greeting, play a short known click or chirp and detect it in the mic capture stream to measure the actual speaker→mic round-trip. The greeting itself could serve as the calibration signal — its first few frames are a known waveform. The measured delay replaces the estimate immediately, giving AEC3 a precise alignment from the very first TTS frame and making the approach robust across all audio hardware.
+
 **Kanji level in tutor responses**
 The system prompt constrains the script the tutor uses:
 - N5/N4: hiragana and katakana only — no kanji

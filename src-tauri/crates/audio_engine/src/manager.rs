@@ -219,8 +219,26 @@ impl AudioManager {
         // After TTS playback ends, suppress new turns briefly so room echo doesn't
         // get mistaken for user speech. Skipped when a barge-in already filled the buffer.
         let mut echo_tail_until = Instant::now();
+        // Whether AEC stream delay has been calibrated from the first hardware callback.
+        let mut aec_delay_set = false;
 
         while running.load(Ordering::SeqCst) {
+            // Calibrate AEC stream delay once the first InputCallbackInfo measurement
+            // is available (~10ms after capture starts). The estimate is:
+            //   stream_delay = input_latency × 2 + 5ms
+            // (output buffer ≈ input buffer on macOS built-in audio; 5ms = room travel)
+            if !aec_delay_set {
+                let input_lat = capture.input_latency_ms.load(Ordering::Relaxed);
+                if input_lat > 0 {
+                    let stream_delay_ms = input_lat * 2 + 5;
+                    aec.update_stream_delay(stream_delay_ms);
+                    eprintln!(
+                        "[aec] stream_delay calibrated: input={}ms, estimated_total={}ms",
+                        input_lat, stream_delay_ms
+                    );
+                    aec_delay_set = true;
+                }
+            }
             let is_muted = muted.load(Ordering::SeqCst);
 
             // (audio_play_started is reset inside mute() — no extra bookkeeping needed here)
