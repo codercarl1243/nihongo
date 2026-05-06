@@ -41,8 +41,8 @@
 
     .message.system {
         align-self: center;
-        background: oklch(92% 0.08 30);
-        color: oklch(35% 0.12 30);
+        background: var(--cc-color-primary-400);
+        color: var(--cc-color-neutral-100);
         font-size: 0.85rem;
         max-width: 100%;
         text-align: center;

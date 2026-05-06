@@ -25,7 +25,7 @@ interface PipelineFlowProps {
 
 export default function PipelineFlow({ stage }: PipelineFlowProps) {
     return (
-        <Inline align="center" variant="inverse" variantAppearance='outlined' paint="foreground" className="pipeline-flow py-sm px-0">
+        <Inline align="center" variant="neutral" variantAppearance='outlined' paint="foreground" className="pipeline-flow py-sm px-0">
             {STAGES.map((s, i) => (
                 <Fragment key={s}>
                     <span className={`pipeline-step${s === stage ? ' active' : ''}`}>

@@ -292,18 +292,10 @@ impl AudioManager {
                 // While muted, the render buffer has active TTS data — cancellation is valid.
                 // In the unmuted path there is no speaker output, so AEC is not applied there
                 // (feeding zeros as reference would suppress the user's voice instead).
-                eprintln!("[aec] active — processing {} samples", mono_16k.len());
                 aec.process_in_place(&mut mono_16k);
                 if mono_16k.is_empty() {
                     thread::sleep(Duration::from_millis(5));
                     continue;
-                }
-                // Log post-AEC RMS so we can verify echo cancellation is reducing the signal.
-                // If AEC is working: RMS should be very low (~0.001–0.005) during TTS playback.
-                // If AEC is not working: RMS will match the raw echo level (~0.01–0.1).
-                {
-                    let rms = (mono_16k.iter().map(|s| s * s).sum::<f32>() / mono_16k.len() as f32).sqrt();
-                    eprintln!("[aec] post-AEC RMS: {:.4}", rms);
                 }
 
                 Self::align_windows(&mut mono_16k, &mut barge_remainder, config.vad_window);
@@ -336,6 +328,7 @@ impl AudioManager {
                         / chunk.len() as f32)
                         .sqrt();
                     let energy_ok = rms >= config.barge_in_rms_threshold;
+                    eprintln!("[aec] chunk rms={:.4} gate={} streak={}", rms, energy_ok, barge_speech_streak); // [PIPELINE_DEBUG]
 
                     if barge_in_active && energy_ok && barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
                         barge_speech_streak += 1;
