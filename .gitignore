@@ -32,4 +32,5 @@ __pycache__/
 .venv/
 
 # Generated audio
-*.wav
+*.wav.scout/data/
+.scout/_repomix_raw.xml

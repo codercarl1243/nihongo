@@ -1,0 +1,1209 @@
+{
+  "nodes": [
+    {
+      "id": "lib/logging/errorCodes.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/logging/errorHandling.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/logging/log.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/logging/log.type.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/logging/logAppError.helpers.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/logging/logAppError.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/string/index.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/string/sanitizeString.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/string/stringUtils.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/guards.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/results.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "lib/trycatch.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "prompts/japanese-teacher.txt",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "prompts/tts-completion-dector.txt",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "public/tauri.svg",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "public/vite.svg",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "scripts/test-integration.sh",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "sidecar/requirements.txt",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "src/assets/react.svg",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "src/components/chatWindow/chatMessage.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/chatWindow/input.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/chatWindow/tokenCount.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/components/button/switch/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/components/button/switch/type.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/components/button/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/components/button/type.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/components/icon/icon.type.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/components/icon/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/components/spinner.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/lib/keyboardHandler/index.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/lib/keyboardHandler/keyboardHandlers.type.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/lib/applyDataAttributes.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/lib/tokens.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/lib/toPaintAttribute.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/lib/validatePaint.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/primitives/Block.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/primitives/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/primitives/Inline.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/primitives/Stack.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/primitives/types.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/styles/base/reset.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/components/button.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/components/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/components/link.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/layout/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/layout/wrapper.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/primitives/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/primitives/inline.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/primitives/stack.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/interactions/button.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/interactions/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/interactions/link.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/structure/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/structure/surface.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/appearance.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/paint.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/semantic/variants.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/borders.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/breakpoints.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/shadows.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/spacing.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/theme.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/typography.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/variables.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/typography/font.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/typography/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/typography/sizes.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/borders.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/flow.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/font.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/gap.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/margin.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/padding.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/sr-only.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/underline.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/utils/width.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/index.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/types/accessibility.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/types/paint.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/types/react.d.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/types/spacing.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/types/style.d.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/design-system/types/variant.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/styles/components/indicators.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/styles/keyframes/pulse.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/App.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/main.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/vite-env.d.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/README.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/db/Cargo.toml",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/llm/Cargo.toml",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/tutor/src/lib.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/tutor/Cargo.toml",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/.gitignore",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/build.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/tauri.conf.json",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "CLAUDE.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "index.html",
+      "type": "html",
+      "parseable": false
+    },
+    {
+      "id": "notes.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "plan.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "TODOs.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "tsconfig.json",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "tsconfig.node.json",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "vite.config.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "scripts/test-pipeline.sh",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "sidecar/start.sh",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "src/design-system/styles/tokens/colors.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/styles/components/chatWindow.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/capabilities/default.json",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/capture.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/player.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/resampler.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/vad.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/Cargo.toml",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/db/src/lib.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/db/src/seed.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/db/src/types.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/llm/src/lib.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/tutor/src/types.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/main.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": ".gitignore",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "sidecar/models.py",
+      "type": "python",
+      "parseable": true
+    },
+    {
+      "id": "src/components/chatWindow/useChat.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/lib/api.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/aec.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "package.json",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src/components/audioButton/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/pipelineFlow/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/lib.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/db/src/store.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/bin/integration.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/bin/test_pipeline.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "Models.json",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src/styles/global.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/tutor/src/session.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src/components/chatWindow/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/tutor/src/prompt.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src/lib/store.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/Cargo.toml",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": "src/lib/useEvents.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "README.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "sidecar/server.py",
+      "type": "python",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/llm/src/client.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/manager.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/lib.rs",
+      "type": "rust",
+      "parseable": true
+    }
+  ],
+  "edges": [
+    {
+      "from": "lib/logging/errorHandling.ts",
+      "to": "lib/logging/log.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/logging/errorHandling.ts",
+      "to": "lib/results.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/logging/log.ts",
+      "to": "lib/logging/log.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/logging/log.type.ts",
+      "to": "lib/logging/errorCodes.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/logging/logAppError.helpers.ts",
+      "to": "lib/logging/errorCodes.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/logging/logAppError.helpers.ts",
+      "to": "lib/logging/logAppError.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/logging/logAppError.ts",
+      "to": "lib/logging/errorCodes.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/logging/logAppError.ts",
+      "to": "lib/logging/log.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/results.ts",
+      "to": "lib/guards.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/results.ts",
+      "to": "lib/logging/errorCodes.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/results.ts",
+      "to": "lib/logging/log.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/results.ts",
+      "to": "lib/logging/logAppError.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/results.ts",
+      "to": "lib/trycatch.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/string/index.ts",
+      "to": "lib/string/sanitizeString.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/string/index.ts",
+      "to": "lib/string/stringUtils.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/string/sanitizeString.ts",
+      "to": "lib/guards.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/string/sanitizeString.ts",
+      "to": "lib/string/stringUtils.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/string/stringUtils.ts",
+      "to": "lib/guards.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/trycatch.ts",
+      "to": "lib/logging/log.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "lib/trycatch.ts",
+      "to": "lib/results.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "sidecar/server.py",
+      "to": "sidecar/models.py",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/audio_engine/src/lib.rs",
+      "to": "src-tauri/crates/audio_engine/src/aec.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/audio_engine/src/lib.rs",
+      "to": "src-tauri/crates/audio_engine/src/capture.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/audio_engine/src/lib.rs",
+      "to": "src-tauri/crates/audio_engine/src/manager.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/audio_engine/src/lib.rs",
+      "to": "src-tauri/crates/audio_engine/src/player.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/audio_engine/src/lib.rs",
+      "to": "src-tauri/crates/audio_engine/src/resampler.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/audio_engine/src/lib.rs",
+      "to": "src-tauri/crates/audio_engine/src/vad.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/db/src/lib.rs",
+      "to": "src-tauri/crates/db/src/seed.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/db/src/lib.rs",
+      "to": "src-tauri/crates/db/src/store.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/db/src/lib.rs",
+      "to": "src-tauri/crates/db/src/types.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/llm/src/lib.rs",
+      "to": "src-tauri/crates/llm/src/client.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/tutor/src/lib.rs",
+      "to": "src-tauri/crates/tutor/src/prompt.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/tutor/src/lib.rs",
+      "to": "src-tauri/crates/tutor/src/session.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/tutor/src/lib.rs",
+      "to": "src-tauri/crates/tutor/src/types.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src/App.tsx",
+      "to": "src/components/chatWindow/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/audioButton/index.tsx",
+      "to": "src/design-system/components/button/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/audioButton/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/audioButton/index.tsx",
+      "to": "src/lib/api.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/audioButton/index.tsx",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/chatMessage.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/chatMessage.tsx",
+      "to": "src/design-system/primitives/types.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/chatMessage.tsx",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
+      "to": "src/components/audioButton/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
+      "to": "src/components/chatWindow/chatMessage.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
+      "to": "src/components/chatWindow/tokenCount.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
+      "to": "src/components/chatWindow/useChat.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
+      "to": "src/components/pipelineFlow/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/tokenCount.tsx",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/useChat.ts",
+      "to": "src/lib/api.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/useChat.ts",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/useChat.ts",
+      "to": "src/lib/useEvents.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/pipelineFlow/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/index.tsx",
+      "to": "src/design-system/components/button/type.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/index.tsx",
+      "to": "src/design-system/components/icon/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/index.tsx",
+      "to": "src/design-system/components/spinner.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/index.tsx",
+      "to": "src/design-system/lib/keyboardHandler/index.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/switch/index.tsx",
+      "to": "src/design-system/components/button/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/switch/index.tsx",
+      "to": "src/design-system/components/button/switch/type.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/switch/index.tsx",
+      "to": "src/design-system/components/button/type.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/switch/type.ts",
+      "to": "src/design-system/components/button/type.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/type.ts",
+      "to": "src/design-system/components/icon/icon.type.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/type.ts",
+      "to": "src/design-system/primitives/types.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/button/type.ts",
+      "to": "src/design-system/types/accessibility.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/icon/icon.type.ts",
+      "to": "src/design-system/types/variant.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/components/icon/index.tsx",
+      "to": "src/design-system/components/icon/icon.type.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/lib/keyboardHandler/index.ts",
+      "to": "src/design-system/lib/keyboardHandler/keyboardHandlers.type.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/lib/toPaintAttribute.ts",
+      "to": "src/design-system/types/paint.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/lib/validatePaint.ts",
+      "to": "lib/guards.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/lib/validatePaint.ts",
+      "to": "lib/logging/log.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/lib/validatePaint.ts",
+      "to": "src/design-system/lib/tokens.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/lib/validatePaint.ts",
+      "to": "src/design-system/types/paint.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Block.tsx",
+      "to": "src/design-system/lib/applyDataAttributes.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Block.tsx",
+      "to": "src/design-system/lib/toPaintAttribute.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Block.tsx",
+      "to": "src/design-system/lib/validatePaint.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Block.tsx",
+      "to": "src/design-system/primitives/types.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Inline.tsx",
+      "to": "src/design-system/primitives/Block.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Inline.tsx",
+      "to": "src/design-system/primitives/types.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Stack.tsx",
+      "to": "src/design-system/primitives/Block.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/Stack.tsx",
+      "to": "src/design-system/primitives/types.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/index.tsx",
+      "to": "src/design-system/primitives/Block.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/index.tsx",
+      "to": "src/design-system/primitives/Inline.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/index.tsx",
+      "to": "src/design-system/primitives/Stack.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/types.ts",
+      "to": "src/design-system/types/paint.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/types.ts",
+      "to": "src/design-system/types/spacing.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/design-system/primitives/types.ts",
+      "to": "src/design-system/types/variant.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/lib/useEvents.ts",
+      "to": "src/lib/api.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/lib/useEvents.ts",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/main.tsx",
+      "to": "src/App.tsx",
+      "kind": "imports"
+    }
+  ],
+  "meta": {
+    "project": "nihongo",
+    "ipc_commands": [
+      "/asr/transcribe",
+      "start_session"
+    ],
+    "unresolved_refs": []
+  }
+}
