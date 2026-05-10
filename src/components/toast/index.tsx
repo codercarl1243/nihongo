@@ -1,51 +1,62 @@
 import { useEffect } from 'react';
+import { X } from 'lucide-react';
 import './toast.css';
 import { useAppStore } from '../../lib/store';
 import type { Toast } from '../../lib/store';
-import { Block, Inline } from '../../design-system/primitives';
+import { Inline, Stack } from '../../design-system/primitives';
+import Button from '../../design-system/components/button';
 
 function ToastItem({ id, variant, message, duration }: Toast) {
     const removeToast = useAppStore((s) => s.removeToast);
 
-    useEffect(() => {
-        const timer = setTimeout(() => removeToast(id), duration);
-        return () => clearTimeout(timer);
+    useEffect(function startDismissTimer() {
+        const timer = setTimeout(function dismissToast() {
+            removeToast(id);
+        }, duration);
+
+        return function cancelDismissTimer() {
+            clearTimeout(timer);
+        };
     }, [id, duration, removeToast]);
 
     return (
-        <Block
+        <Inline
             variant={variant}
             variantAppearance="tonal"
             paint="surface"
             className="toast"
+            justify="between"
+            align="center"
+            gap="sm"
             role="status"
         >
-            {/* justify-between requires plain div: <Inline> has no space-between prop */}
-            <div className="toast__inner">
-                <Inline gap="sm" align="center">
-                    <span className="toast__message">{message}</span>
-                </Inline>
-                <button
-                    className="toast__dismiss"
-                    onClick={() => removeToast(id)}
-                    aria-label="Dismiss"
-                >
-                    ✕
-                </button>
-            </div>
-        </Block>
+            <span className="toast__message">{message}</span>
+            <Button
+                className="toast__dismiss"
+                onClick={() => removeToast(id)}
+                aria-label="Dismiss"
+                icon={X}
+            />
+        </Inline>
     );
 }
 
 export default function ToastContainer() {
+    
     const toasts = useAppStore((s) => s.toasts);
+
     if (toasts.length === 0) return null;
 
     return (
-        <div className="toast-container" aria-live="polite" aria-atomic="false">
+        <Stack
+            className="toast-container"
+            aria-live="polite"
+            aria-atomic="false"
+            gap="sm"
+        >
             {toasts.map((t) => (
                 <ToastItem key={t.id} {...t} />
             ))}
-        </div>
+        </Stack>
     );
 }

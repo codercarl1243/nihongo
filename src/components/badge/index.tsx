@@ -1,30 +1,28 @@
 import './badge.css';
 import clsx from 'clsx';
 import { Block } from '../../design-system/primitives';
-import type { Variant, VariantAppearance } from '../../design-system/types/variant';
+import { BlockWrapperProps } from '../../design-system/primitives/types';
 
-type BadgeProps = {
-    variant?: Variant;
-    appearance?: VariantAppearance;
+type BaseBadgeProps = {
     size?: 'sm' | 'md';
-    children: React.ReactNode;
 };
+
+type BadgeProps = BlockWrapperProps<'span', BaseBadgeProps>;
 
 export default function Badge({
     variant = 'neutral',
-    appearance = 'tonal',
+    variantAppearance = 'tonal',
     size = 'md',
-    children,
+    ...props
 }: BadgeProps) {
     return (
         <Block
             as="span"
             variant={variant}
-            variantAppearance={appearance}
+            variantAppearance={variantAppearance}
             paint="surface"
             className={clsx('badge', `badge--${size}`)}
-        >
-            {children}
-        </Block>
+            {...props}
+        />
     );
 }

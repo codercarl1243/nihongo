@@ -1,14 +1,15 @@
 import './progress.css';
 import clsx from 'clsx';
 import { Block } from '../../design-system/primitives';
-import type { Variant } from '../../design-system/types/variant';
+import { BlockWrapperProps } from '../../design-system/primitives/types';
 
-type ProgressProps = {
+type BaseProgressProps = {
     value: number;
-    variant?: Variant;
     size?: 'sm' | 'md';
     'aria-label': string;
 };
+
+type ProgressProps = BlockWrapperProps<'div', BaseProgressProps>;
 
 export default function Progress({
     value,
@@ -17,7 +18,10 @@ export default function Progress({
     'aria-label': ariaLabel,
 }: ProgressProps) {
     return (
-        <Block variant={variant} className={clsx('progress-track', `progress-track--${size}`)}>
+        <Block
+            variant={variant}
+            className={clsx('progress-track', `progress-track--${size}`)}
+        >
             <progress
                 className="progress"
                 value={Math.max(0, Math.min(100, value))}

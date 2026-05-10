@@ -1,8 +1,8 @@
 @layer components {
     .progress-track {
-        border-radius: 999px;
+        border-radius: var(--cc-radius-full);
         overflow: hidden;
-        background-color: var(--cc-variant-surface, var(--cc-color-neutral-200, #e5e7eb));
+        background-color: var(--cc-surface-color, var(--cc-color-neutral-200, #e5e7eb));
     }
 
     .progress-track--sm { height: 4px; }
@@ -23,13 +23,13 @@
     }
 
     .progress::-webkit-progress-value {
-        background: var(--cc-variant-bg, var(--cc-color-primary-400));
-        border-radius: 999px;
+        background: var(--cc-background-color, var(--cc-color-primary-400));
+        border-radius: var(--cc-radius-full);
         transition: width 200ms ease;
     }
 
     .progress::-moz-progress-bar {
-        background: var(--cc-variant-bg, var(--cc-color-primary-400));
-        border-radius: 999px;
+        background: var(--cc-background-color, var(--cc-color-primary-400));
+        border-radius: var(--cc-radius-full);
     }
 }

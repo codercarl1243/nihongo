@@ -1,20 +1,20 @@
 @layer components {
     .badge {
+        --half_space: 0.125rem;
         display: inline-flex;
         align-items: center;
-        border-radius: 999px;
-        font-weight: 500;
-        line-height: 1;
+        border-radius: var(--cc-radius-full);
+        font-size: var(--cc-font-size-sm);
+        font-weight: 600;
+        line-height: var(--cc-line-height-tight);
         white-space: nowrap;
     }
 
     .badge--sm {
-        font-size: 0.6875rem;
-        padding: 0.125rem var(--cc-spacing-xs);
+        padding: var(--half_space) var(--cc-spacing-xs);
     }
 
     .badge--md {
-        font-size: 0.75rem;
-        padding: 0.1875rem var(--cc-spacing-sm);
+        padding: var(--half_space) var(--cc-spacing-sm);
     }
 }

@@ -1,38 +1,28 @@
 import './card.css';
 import clsx from 'clsx';
-import type { ElementType } from 'react';
-import { Block, Stack } from '../../design-system/primitives';
-import type { Variant, VariantAppearance } from '../../design-system/types/variant';
-import type { Spacing } from '../../design-system/types/spacing';
+import { Stack } from '../../design-system/primitives';
+import { StackProps } from '../../design-system/primitives/types';
 
-type CardProps = {
-    variant?: Variant;
-    appearance?: VariantAppearance;
-    padding?: Spacing;
+type CardProps = StackProps & {
     interactive?: boolean;
-    as?: ElementType;
-    children: React.ReactNode;
 };
 
 export default function Card({
     variant = 'neutral',
-    appearance = 'outlined',
-    padding = 'lg',
+    variantAppearance = 'outlined',
+    gap = 'lg',
     interactive = false,
-    as,
-    children,
+    ...props
 }: CardProps) {
+
     return (
-        <Block
-            as={as}
+        <Stack
             variant={variant}
-            variantAppearance={appearance}
+            variantAppearance={variantAppearance}
             paint="surface"
+            gap={gap}
             className={clsx('card', { 'card--interactive': interactive })}
-        >
-            <Stack gap={padding}>
-                {children}
-            </Stack>
-        </Block>
+            {...props}
+        />
     );
 }
