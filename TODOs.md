@@ -41,11 +41,11 @@ pnpm audit
 
 ---
 
-## Phase 2 — Barge-In Refactor + Tests
+## Phase 2 — Barge-In Refactor + Tests ✅
 
 > **Why:** TTS audio is being cut off prematurely even with AEC. The barge-in logic is inline in `manager.rs:run_loop()` — 200+ lines of atomic state and streak counters that can't be tested without real hardware. Extract it so we can test every edge case deterministically.
 
-### 2a. Extract `BargeInDetector` + `EchoTailTracker`
+### 2a. Extract `BargeInDetector` + `EchoTailTracker` ✅
 
 **New file:** `src-tauri/crates/audio_engine/src/barge_in.rs`
 
@@ -97,7 +97,7 @@ impl EchoTailTracker {
 - On unmute: call `detector.take_buffer()` to get any buffered barge-in audio
 - `lib.rs` re-exports both types from `audio_engine`
 
-### 2b. Unit tests for `BargeInDetector` (in `barge_in.rs` `#[cfg(test)]`)
+### 2b. Unit tests for `BargeInDetector` (in `barge_in.rs` `#[cfg(test)]`) ✅
 
 All tests pass fake `now_ms` — **no clock dependency, no hardware needed**.
 
@@ -115,7 +115,7 @@ All tests pass fake `now_ms` — **no clock dependency, no hardware needed**.
 | `echo_tail_arms_and_expires` | `arm()` → `is_active()` true; after `duration` → false |
 | `echo_tail_disarm_cancels` | `disarm()` → `is_active()` false immediately |
 
-### 2c. AEC integration tests
+### 2c. AEC integration tests ✅
 
 **New file:** `src-tauri/crates/audio_engine/src/tests/aec_barge_in.rs`
 
@@ -159,7 +159,7 @@ Uses `AecSink` + `AecProcessor` directly — **no hardware, no sidecar**.
 5. Assert barge_in never Confirmed
 ```
 
-### 2d. New integration binary: `test_aec`
+### 2d. New integration binary: `test_aec` ✅
 
 **New file:** `src-tauri/src/bin/test_aec.rs`
 
@@ -178,7 +178,7 @@ name = "test_aec"
 path = "src/bin/test_aec.rs"
 ```
 
-### 2e. Pre-onset ring buffer
+### 2e. Pre-onset ring buffer ✅
 
 > **Why:** VAD confirmation requires ~3 consecutive frames (~90 ms). The first phoneme of every word is captured during this confirmation window and discarded. tama-desktop solves this with a small ring buffer of pre-onset audio that is prepended to the finalized segment before it goes to ASR.
 
