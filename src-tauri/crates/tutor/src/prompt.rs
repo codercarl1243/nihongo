@@ -23,7 +23,7 @@ const INSTRUCTION_LANGUAGE_N5_N4: &str =
      phrase, say it in Japanese then immediately give the meaning in English in parentheses. \
      Never reply to a question with a Japanese-only sentence.\
      \n\nScript: Write all Japanese using romaji, until the student understands hiragana, and katakana. \
-     Only use kanji when the student has already encountered that specific character in a lesson. \";
+     Only use kanji when the student has already encountered that specific character in a lesson.";
 
 const INSTRUCTION_LANGUAGE_N3: &str =
     "\n\nInstruction language: Mix English and Japanese. Use simple Japanese sentences \

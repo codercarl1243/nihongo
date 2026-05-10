@@ -22,6 +22,10 @@ path = "src/bin/test_pipeline.rs"
 name = "test_aec"
 path = "src/bin/test_aec.rs"
 
+[[bin]]
+name = "gen_tts_fixtures"
+path = "src/bin/gen_tts_fixtures.rs"
+
 [workspace]
 members = [
     ".",
