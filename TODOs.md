@@ -585,6 +585,31 @@ Add `generate_shadow_script(topic: &str, level: u8) -> Vec<String>` Tauri comman
 
 ---
 
+## Stretch Goals
+
+> Not scheduled. Revisit after user testing and any B2B conversations have shaped the real requirements.
+
+### Cloud backend (bring-your-own-API-key)
+
+The sidecar is already an HTTP abstraction (`/asr/transcribe`, `/llm/chat`, `/tts/speak`). A cloud-passthrough mode would route those same calls to hosted APIs instead of local MLX models — the Rust core and audio pipeline stay untouched.
+
+**Why it matters for B2B:** corporate buyers often already have a Claude or OpenAI subscription. Letting them supply their own key means no conversation data goes to a new unknown vendor, removes the Apple Silicon requirement, and lets the app run on any company MacBook.
+
+Candidate mappings:
+| Local | Cloud |
+|-------|-------|
+| Qwen3-ASR (MLX) | OpenAI Whisper API / Deepgram |
+| RakutenAI LLM (MLX) | Claude API or OpenAI (customer's key) |
+| Qwen3-TTS (MLX) | OpenAI TTS / ElevenLabs |
+
+**Implementation sketch** (when the time comes):
+- Add a `backend` setting: `"local"` (default) or `"cloud"`
+- Cloud sidecar mode: thin Python shim that forwards to the relevant API using the stored key
+- Settings screen: backend toggle + API key field (stored in OS keychain via Tauri's credential plugin)
+- No changes to the Rust audio pipeline or frontend event model
+
+---
+
 ## Verification
 
 ```bash
