@@ -18,6 +18,10 @@ path = "src/bin/integration.rs"
 name = "test_pipeline"
 path = "src/bin/test_pipeline.rs"
 
+[[bin]]
+name = "test_aec"
+path = "src/bin/test_aec.rs"
+
 [workspace]
 members = [
     ".",

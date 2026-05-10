@@ -51,13 +51,18 @@
 
 
 pub mod aec;
+pub mod barge_in;
 pub mod capture;
 pub mod player;
 pub mod resampler;
 pub mod vad;
 pub mod manager;
 
+#[cfg(test)]
+mod tests;
+
 pub use aec::{AecSink, create_aec_pair};
+pub use barge_in::{BargeInDetector, BargeInState, EchoTailTracker};
 pub use manager::{AudioManager, EngineConfig};
 pub use capture::{AudioCapture, CaptureConfig};
 pub use player::AudioPlayer;
