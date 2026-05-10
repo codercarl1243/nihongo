@@ -28,11 +28,25 @@ impl Db {
     }
 
     fn migrate(&self) -> Result<()> {
+        // Version is captured once; multiple migrations run sequentially for fresh DBs
         let version: i32 = self.conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version < 1 {
             self.migrate_to_v1()?;
         }
+        if version < 2 {
+            self.migrate_to_v2()?;
+        }
+        Ok(())
+    }
+
+    fn migrate_to_v2(&self) -> Result<()> {
+        self.conn.execute_batch("
+            ALTER TABLE topics             ADD COLUMN language_code TEXT NOT NULL DEFAULT 'ja';
+            ALTER TABLE vocabulary         ADD COLUMN language_code TEXT NOT NULL DEFAULT 'ja';
+            ALTER TABLE student_vocabulary ADD COLUMN language_code TEXT NOT NULL DEFAULT 'ja';
+            PRAGMA user_version = 2;
+        ")?;
         Ok(())
     }
 

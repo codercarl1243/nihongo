@@ -1,6 +1,8 @@
 use db::{LearnerProfile, LessonSummary, SessionContext};
 use llm::ChatMessage;
 
+use crate::language::LanguageConfig;
+
 const SYSTEM_BASE: &str = "\
 You are a Japanese language tutor in a voice conversation. Keep every reply SHORT \
 — one or two sentences maximum, no exceptions.
@@ -17,44 +19,14 @@ Rules:
   with a short prompt inviting the student to try something in Japanese. Use your \
   judgement — casual exchanges like greetings do not need a prompt.";
 
-const INSTRUCTION_LANGUAGE_N5_N4: &str =
-    "\n\nInstruction language: The student is a beginner and understands little or no \
-     Japanese. Conduct the lesson in English. When you introduce a Japanese word or \
-     phrase, say it in Japanese then immediately give the meaning in English in parentheses. \
-     Never reply to a question with a Japanese-only sentence.\
-     \n\nScript: Write all Japanese using romaji, until the student understands hiragana, and katakana. \
-     Only use kanji when the student has already encountered that specific character in a lesson.";
-
-const INSTRUCTION_LANGUAGE_N3: &str =
-    "\n\nInstruction language: Mix English and Japanese. Use simple Japanese sentences \
-     the student knows, but fall back to English for explanations. Always gloss new words.\
-     \n\nScript: Use hiragana, katakana, and common everyday kanji (N3 level and below). \
-     Write less familiar kanji in hiragana.";
-
-const INSTRUCTION_LANGUAGE_N2_N1: &str =
-    "\n\nInstruction language: Conduct the lesson in Japanese. Use English only when \
-     explicitly asked or when a grammar point cannot be expressed otherwise.\
-     \n\nScript: Use kanji, hiragana, and katakana naturally as a native speaker would.";
-
-pub fn build_system_prompt_pub(ctx: &SessionContext) -> ChatMessage {
-    build_system_prompt(ctx)
+pub fn build_system_prompt_pub(ctx: &SessionContext, lang: &dyn LanguageConfig) -> ChatMessage {
+    build_system_prompt(ctx, lang)
 }
 
-pub fn build_system_prompt(ctx: &SessionContext) -> ChatMessage {
-    let level_desc = match ctx.profile.current_level {
-        5 => "N5 (absolute beginner — hiragana, romaji, katakana, ~100 basic words)",
-        4 => "N4 (elementary — ~300 words, basic grammar)",
-        3 => "N3 (intermediate — ~650 words, complex sentences)",
-        2 => "N2 (upper intermediate — ~1500 words)",
-        1 => "N1 (advanced — ~2000+ words, native-level grammar)",
-        _ => "N5 (beginner)",
-    };
-
-    let instruction_lang = match ctx.profile.current_level {
-        1 | 2 => INSTRUCTION_LANGUAGE_N2_N1,
-        3     => INSTRUCTION_LANGUAGE_N3,
-        _     => INSTRUCTION_LANGUAGE_N5_N4,
-    };
+pub fn build_system_prompt(ctx: &SessionContext, lang: &dyn LanguageConfig) -> ChatMessage {
+    let level = ctx.profile.current_level;
+    let level_desc    = lang.level_description(level);
+    let instruction_lang = lang.instruction_for_level(level);
 
     let mut prompt = format!(
         "{}{}\n\nStudent level: {}\nTotal words encountered: {}",
@@ -102,6 +74,7 @@ pub fn build_system_prompt(ctx: &SessionContext) -> ChatMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::language::Japanese;
     use db::{LearnerProfile, SessionContext};
 
     fn ctx(level: u8) -> SessionContext {
@@ -114,29 +87,28 @@ mod tests {
     }
 
     fn prompt_text(level: u8) -> String {
-        build_system_prompt(&ctx(level)).content
+        build_system_prompt(&ctx(level), &Japanese).content
     }
 
     #[test]
-    fn n5_prompt_forbids_kanji() {
+    fn n5_prompt_uses_romaji_rule() {
         let text = prompt_text(5);
-        assert!(text.contains("hiragana and katakana only"), "N5 prompt missing hiragana-only script instruction");
-        assert!(text.contains("Do not use any kanji"), "N5 prompt missing kanji ban");
+        assert!(text.contains("romaji"), "N5 prompt should mention romaji");
+        assert!(text.contains("Only use kanji when"), "N5 prompt should conditionally allow kanji");
     }
 
     #[test]
-    fn n4_prompt_forbids_kanji() {
+    fn n4_prompt_uses_romaji_rule() {
         let text = prompt_text(4);
-        assert!(text.contains("hiragana and katakana only"), "N4 prompt missing hiragana-only script instruction");
-        assert!(text.contains("Do not use any kanji"), "N4 prompt missing kanji ban");
+        assert!(text.contains("romaji"), "N4 prompt should mention romaji");
+        assert!(text.contains("Only use kanji when"), "N4 prompt should conditionally allow kanji");
     }
 
     #[test]
     fn n3_prompt_allows_everyday_kanji() {
         let text = prompt_text(3);
         assert!(text.contains("N3 level"), "N3 prompt missing N3 kanji instruction");
-        // Must not apply the beginner or advanced constraint
-        assert!(!text.contains("Do not use any kanji"), "N3 prompt should not ban kanji");
+        assert!(!text.contains("Only use kanji when"), "N3 prompt should not ban kanji");
         assert!(!text.contains("as a native speaker would"), "N3 prompt should not apply N2/N1 instruction");
     }
 
@@ -144,7 +116,7 @@ mod tests {
     fn n2_prompt_uses_full_kanji() {
         let text = prompt_text(2);
         assert!(text.contains("as a native speaker would"), "N2 prompt missing native-speaker script instruction");
-        assert!(!text.contains("Do not use any kanji"), "N2 prompt should not ban kanji");
+        assert!(!text.contains("Only use kanji when"), "N2 prompt should not ban kanji");
     }
 
     #[test]
@@ -186,7 +158,7 @@ mod tests {
             StudentVocabulary { id: 1, vocabulary_id: 1, word: "猫".into(), reading: None, meaning: None, fluency_level: 0, times_correct: 0, times_incorrect: 0 },
             StudentVocabulary { id: 2, vocabulary_id: 2, word: "犬".into(), reading: None, meaning: None, fluency_level: 0, times_correct: 0, times_incorrect: 0 },
         ];
-        let text = build_system_prompt(&ctx).content;
+        let text = build_system_prompt(&ctx, &Japanese).content;
         assert!(text.contains("猫"), "prompt should list SRS due word 猫");
         assert!(text.contains("犬"), "prompt should list SRS due word 犬");
     }
@@ -195,7 +167,7 @@ mod tests {
     fn prompt_includes_previous_notes() {
         let mut ctx = ctx(3);
         ctx.last_notes = Some("Student struggles with て-form.".into());
-        let text = build_system_prompt(&ctx).content;
+        let text = build_system_prompt(&ctx, &Japanese).content;
         assert!(text.contains("Student struggles with て-form."));
     }
 }
@@ -208,6 +180,7 @@ mod tests {
 pub fn build_system_prompt_from_parts(
     profile: &LearnerProfile,
     last_summary: Option<&LessonSummary>,
+    lang: &dyn LanguageConfig,
 ) -> ChatMessage {
     let ctx = SessionContext {
         profile: profile.clone(),
@@ -217,5 +190,5 @@ pub fn build_system_prompt_from_parts(
             .filter(|s| !s.notes.is_empty())
             .map(|s| s.notes.clone()),
     };
-    build_system_prompt(&ctx)
+    build_system_prompt(&ctx, lang)
 }

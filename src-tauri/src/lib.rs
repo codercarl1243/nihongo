@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 use std::time::Duration;
 
+use std::sync::Arc;
+
 use audio_engine::{AecSink, AudioManager, AudioPlayer, EngineConfig};
 use chrono::Timelike as _;
 use db::Db;
@@ -9,7 +11,7 @@ use llm::{ChatMessage, ChatUsage, SidecarClient, StreamItem};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio_stream::StreamExt;
-use tutor::{parse_response_pub, parse_summary_pub, TutorSession};
+use tutor::{Japanese, LangConfig, parse_response_pub, parse_summary_pub, TutorSession};
 
 // ---------------------------------------------------------------------------
 // App state
@@ -61,15 +63,14 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
         );
     }
 
+    let lang: LangConfig = Arc::new(Japanese);
+
     // Silence threshold scales with proficiency: beginners need more time to
     // retrieve words; near-native speakers can pace like natural conversation.
     let silence_ms = {
         let db = state.db.lock().unwrap();
-        match db.session_context().map(|c| c.profile.current_level).unwrap_or(5) {
-            1 | 2 => 700,  // N1/N2 — near-native pacing
-            3     => 900,  // N3 — intermediate
-            _     => 1200, // N4/N5 — beginner; learners need time to retrieve words
-        }
+        let level = db.session_context().map(|c| c.profile.current_level).unwrap_or(5);
+        lang.silence_threshold_ms(level)
     };
 
     {
@@ -89,7 +90,7 @@ async fn start_session(app: AppHandle, state: State<'_, AppState>) -> Result<(),
 
     {
         let db = state.db.lock().unwrap();
-        let session = TutorSession::new(&db).map_err(|e| e.to_string())?;
+        let session = TutorSession::new(&db, lang).map_err(|e| e.to_string())?;
         *state.session.lock().unwrap() = Some(session);
     }
 
@@ -232,21 +233,6 @@ async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Returns true when the tutor's response is asking the student to produce a
-/// specific short phrase — drill context where a 500ms silence threshold is
-/// appropriate rather than the level-based default.
-fn is_drill_prompt(response: &str) -> bool {
-    let r = response.to_lowercase();
-    r.contains("try say")
-        || r.contains("can you say")
-        || r.contains("try using")
-        || r.contains("how do you say")
-        || r.contains("say that")
-        || r.contains("repeat")
-        || r.contains("言ってみて")
-        || r.contains("言えますか")
-}
 
 // ---------------------------------------------------------------------------
 // Per-turn pipeline
@@ -437,7 +423,11 @@ async fn handle_turn(
     // Adjust silence threshold for the next turn based on what the tutor just said.
     // Drill prompts expect a short specific phrase → tighten to 500ms.
     // Open questions / conversation → reset to the level-appropriate default.
-    if is_drill_prompt(&full_text) {
+    let is_drill = {
+        let sg = state.session.lock().unwrap();
+        sg.as_ref().map(|s| s.lang().is_drill_prompt(&full_text)).unwrap_or(false)
+    };
+    if is_drill {
         state.audio.lock().unwrap().set_silence_threshold(500);
     } else {
         state.audio.lock().unwrap().reset_silence_threshold();
@@ -534,11 +524,15 @@ async fn compact_context(app: &AppHandle, llm: &SidecarClient) -> anyhow::Result
     let summary = parse_summary_pub(&raw_summary);
 
     // Save summary, then rebuild context from fresh session_context() snapshot.
+    let lang: LangConfig = {
+        let sg = state.session.lock().unwrap();
+        sg.as_ref().map(|s| s.lang()).unwrap_or_else(|| Arc::new(Japanese))
+    };
     let new_system: ChatMessage = {
         let db = state.db.lock().unwrap();
         db.save_lesson_summary(&summary)?;
         let ctx = db.session_context()?;
-        tutor::build_system_prompt_pub(&ctx)
+        tutor::build_system_prompt_pub(&ctx, lang.as_ref())
     };
 
     // Reset the session context
