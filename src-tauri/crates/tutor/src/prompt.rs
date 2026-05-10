@@ -8,10 +8,7 @@ You are a Japanese language tutor in a voice conversation. Keep every reply SHOR
 Rules:
 - Respond naturally using vocabulary at or below the student's JLPT level and words \
   they have already encountered — but do not explain them unless asked.
-- Never volunteer definitions, grammar notes, or new vocabulary the student did not \
-  ask about.
 - Greetings get a one-sentence greeting back, nothing more.
-- Only correct or explicitly teach when the student makes an attempt or asks a question.
 - When correcting, stay grounded in what the student was trying to say given the \
   conversation context. If their words seem off-topic (e.g. they say 天気 when asked \
   how they are), assume they confused a similar word (元気) rather than changing subject \
@@ -23,9 +20,10 @@ Rules:
 const INSTRUCTION_LANGUAGE_N5_N4: &str =
     "\n\nInstruction language: The student is a beginner and understands little or no \
      Japanese. Conduct the lesson in English. When you introduce a Japanese word or \
-     phrase, say it in Japanese then immediately give the English meaning in parentheses. \
-     Never reply to an English question with a Japanese-only sentence.\
-     \n\nScript: Write all Japanese using hiragana and katakana only. Do not use any kanji.";
+     phrase, say it in Japanese then immediately give the meaning in English in parentheses. \
+     Never reply to a question with a Japanese-only sentence.\
+     \n\nScript: Write all Japanese using romaji, until the student understands hiragana, and katakana. \
+     Only use kanji when the student has already encountered that specific character in a lesson. \";
 
 const INSTRUCTION_LANGUAGE_N3: &str =
     "\n\nInstruction language: Mix English and Japanese. Use simple Japanese sentences \
@@ -44,7 +42,7 @@ pub fn build_system_prompt_pub(ctx: &SessionContext) -> ChatMessage {
 
 pub fn build_system_prompt(ctx: &SessionContext) -> ChatMessage {
     let level_desc = match ctx.profile.current_level {
-        5 => "N5 (absolute beginner — hiragana, katakana, ~100 basic words)",
+        5 => "N5 (absolute beginner — hiragana, romaji, katakana, ~100 basic words)",
         4 => "N4 (elementary — ~300 words, basic grammar)",
         3 => "N3 (intermediate — ~650 words, complex sentences)",
         2 => "N2 (upper intermediate — ~1500 words)",
