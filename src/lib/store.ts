@@ -1,6 +1,14 @@
 import { create } from 'zustand';
+import type { Variant } from '../design-system/types/variant';
 
 export type SessionStatus = 'warming_up' | 'idle' | 'starting' | 'ready';
+
+export type Toast = {
+    id: string;
+    variant: Variant;
+    message: string;
+    duration: number;
+};
 
 export type Message = {
     id: string;
@@ -16,6 +24,7 @@ type AppState = {
     micActive: boolean;
     isThinking: boolean;
     pipelineStage: string; // [PIPELINE_DEBUG]
+    toasts: Toast[];
 
     setSessionStatus: (status: SessionStatus) => void;
     addMessage: (sender: 'user' | 'tutor' | 'system', text: string) => void;
@@ -25,6 +34,8 @@ type AppState = {
     setMicActive: (active: boolean) => void;
     setIsThinking: (thinking: boolean) => void;
     setPipelineStage: (stage: string) => void; // [PIPELINE_DEBUG]
+    addToast: (opts: { variant: Variant; message: string; duration?: number }) => void;
+    removeToast: (id: string) => void;
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -35,6 +46,7 @@ export const useAppStore = create<AppState>((set) => ({
     micActive: false,
     isThinking: false,
     pipelineStage: '', // [PIPELINE_DEBUG]
+    toasts: [],
 
     setSessionStatus: (sessionStatus) => set({ sessionStatus }),
 
@@ -59,4 +71,10 @@ export const useAppStore = create<AppState>((set) => ({
     setMicActive: (micActive) => set({ micActive }),
     setIsThinking: (isThinking) => set({ isThinking }),
     setPipelineStage: (pipelineStage) => set({ pipelineStage }), // [PIPELINE_DEBUG]
+    addToast: ({ variant, message, duration = 4000 }) =>
+        set((s) => ({
+            toasts: [...s.toasts, { id: crypto.randomUUID(), variant, message, duration }],
+        })),
+    removeToast: (id) =>
+        set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));

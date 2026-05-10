@@ -1,0 +1,16 @@
+@layer components {
+    .card {
+        border-radius: var(--cc-border-radius-md, 0.5rem);
+    }
+
+    .card--interactive {
+        cursor: pointer;
+        transition: box-shadow 150ms ease;
+    }
+
+    .card--interactive:hover,
+    .card--interactive:focus-visible {
+        box-shadow: 0 0 0 2px var(--cc-variant-border);
+        outline: none;
+    }
+}

@@ -1,0 +1,20 @@
+@layer components {
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        font-weight: 500;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .badge--sm {
+        font-size: 0.6875rem;
+        padding: 0.125rem var(--cc-spacing-xs);
+    }
+
+    .badge--md {
+        font-size: 0.75rem;
+        padding: 0.1875rem var(--cc-spacing-sm);
+    }
+}
