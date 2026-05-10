@@ -28,6 +28,7 @@ impl Db {
     }
 
     fn migrate(&self) -> Result<()> {
+        // Version is captured once; multiple migrations run sequentially for fresh DBs
         let version: i32 = self.conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if version < 1 {

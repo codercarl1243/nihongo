@@ -53,12 +53,20 @@ impl LanguageConfig for Japanese {
 
     fn is_drill_prompt(&self, response: &str) -> bool {
         let r = response.to_lowercase();
-        r.contains("try say")
-            || r.contains("can you say")
-            || r.contains("try using")
-            || r.contains("how do you say")
-            || r.contains("say that")
-            || r.contains("repeat")
+        
+        let contains_phrase = |phrase: &str| {
+            r.split_whitespace()
+                .collect::<Vec<_>>()
+                .windows(phrase.split_whitespace().count())
+                .any(|window| window.join(" ") == phrase)
+        };
+
+        contains_phrase("try say")
+            || contains_phrase("can you say")
+            || contains_phrase("try using")
+            || contains_phrase("how do you say")
+            || contains_phrase("say that")
+            || r.split_whitespace().any(|w| w == "repeat")
             || r.contains("言ってみて")
             || r.contains("言えますか")
     }
