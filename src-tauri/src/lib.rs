@@ -286,9 +286,15 @@ async fn handle_turn(
     };
 
     // ── 3+6. Pipeline: LLM stream → sentence channel → TTS → play ─────────
-    // Sentences are sent over a buffered channel so TTS for sentence N can
-    // begin while the LLM is still generating sentence N+1.
+    // Sentences flow through two pipelined channels:
+    //   1. sentence_tx/rx: LLM task → dispatcher (capacity 8)
+    //   2. wav_handle_tx/rx: dispatcher → playback loop (capacity 8)
+    // The dispatcher spawns a TTS task the moment each sentence arrives, so
+    // sentence N+1's HTTP request is already queued in the Python executor
+    // before sentence N's WAV is fully consumed by the playback loop.
     let (sentence_tx, mut sentence_rx) = tokio::sync::mpsc::channel::<String>(8);
+    let (wav_handle_tx, mut wav_handle_rx) =
+        tokio::sync::mpsc::channel::<tokio::task::JoinHandle<anyhow::Result<Vec<u8>>>>(8);
 
     let llm_clone  = llm.clone();
     let msgs_clone = messages.clone();
@@ -315,13 +321,32 @@ async fn handle_turn(
         Ok::<(String, ChatUsage), anyhow::Error>((full, usage))
     });
 
+    // Dispatcher: receives sentences, immediately fires a TTS task per sentence,
+    // and sends the JoinHandle (in order) to the playback loop.  Because the
+    // Python executor has max_workers=1 the synthesis jobs serialise server-side,
+    // but sentence N+1's HTTP request is already queued the moment sentence N
+    // finishes — no Rust-side gap between consecutive synthesis calls.
+    let llm_for_dispatcher  = llm.clone();
+    let app_for_dispatcher  = app.clone();
+    let dispatcher = tokio::spawn(async move {
+        let state = app_for_dispatcher.state::<AppState>();
+        while let Some(sentence) = sentence_rx.recv().await {
+            // Best-effort early-out: don't fire requests that will never be played.
+            if state.audio.lock().unwrap().barge_in_pending() { break; }
+            let llm = llm_for_dispatcher.clone();
+            let handle = tokio::spawn(async move { llm.speak(&sentence).await });
+            if wav_handle_tx.send(handle).await.is_err() { break; }
+        }
+    });
+
     let mut total_samples = 0usize;
     let mut tts_started   = false;
 
-    // Run TTS loop inside an async block so unmute() is guaranteed to fire
-    // even if speak() returns an error mid-stream.
+    // Playback loop: awaits handles in arrival order (ordering preserved by the
+    // mpsc channel), then plays each WAV. Runs inside an async block so
+    // unmute() is guaranteed to fire even if a speak() future returns an error.
     let tts_result = async {
-        while let Some(sentence) = sentence_rx.recv().await {
+        while let Some(handle) = wav_handle_rx.recv().await {
             if !tts_started {
                 app.emit("pipeline_status", PipelineStatusEvent { stage: "TTS: Synthesizing".into() }).ok(); // [PIPELINE_DEBUG]
                 state.audio.lock().unwrap().mute();
@@ -329,12 +354,14 @@ async fn handle_turn(
                 tts_started = true;
             }
             // User spoke during TTS — stop queuing sentences and let the
-            // barge-in flush the player buffer.
+            // barge-in flush the player buffer. Dropping wav_handle_rx (via
+            // break) closes the channel, causing the dispatcher's send to fail
+            // so it also stops firing new requests.
             if state.audio.lock().unwrap().barge_in_pending() {
                 state.player.lock().unwrap().stop();
                 break;
             }
-            let wav = llm.speak(&sentence).await?;
+            let wav = handle.await.map_err(|e| anyhow::anyhow!("TTS task panicked: {e}"))??;
             let pcm = wav_to_f32(&wav)?;
             total_samples += pcm.len();
             state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
@@ -349,6 +376,8 @@ async fn handle_turn(
         }
         Ok::<(), anyhow::Error>(())
     }.await;
+
+    dispatcher.abort(); // no-op if the dispatcher already exited naturally
 
     // On TTS error: unmute immediately so the session is never left permanently muted.
     // On success: unmute is deferred until after wait_for_playback (see below) so the
