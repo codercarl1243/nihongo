@@ -30,7 +30,7 @@ class Models:
 
         print("[models] loading LLM…")
         from mlx_lm import load as lm_load, stream_generate
-        self.llm_model, self.llm_tokenizer = lm_load(self.llm_path)
+        self.llm_model, self.llm_tokenizer = lm_load(Path(self.llm_path))
         print("[models] LLM loaded — warming up MLX kernels…")
         for _ in stream_generate(self.llm_model, self.llm_tokenizer, "hi", max_tokens=1):
             break

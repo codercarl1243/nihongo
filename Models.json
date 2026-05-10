@@ -3,21 +3,16 @@
     {
       "id": "asr",
       "model": "Qwen3-ASR",
-      "path": "~/llm_models/mlx-community/Qwen3-ASR-1.7B-8bit"
+      "path": "~/llm_models/Qwen3-ASR-1.7B-8bit"
     },
     {
       "id": "llm",
       "model": "RakutenAI-7B-instruct-MLX-4bit",
-      "path": "~/llm_models/mlx-community/RakutenAI-7B-instruct-MLX-4bit"
+      "path": "~/llm_models/RakutenAI-7B-instruct-MLX-4bit"
     },
     {
-      "id": "tts-vd",
-      "model": "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
-      "path": "~/llm_models/mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16"
-    },
-      {
       "id": "tts-cv",
-      "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit",
+      "model": "Qwen3-TTS-12Hz-1.7B-CustomVoice",
       "path": "~/llm_models/mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-8bit"
     }
   ]
