@@ -1,0 +1,18 @@
+@layer components {
+    .card {
+        border-radius: var(--cc-radius-md, 0.5rem);
+    }
+
+    .card--interactive {
+        cursor: pointer;
+        outline: 2px solid transparent;
+        outline-offset: 0px;
+        transition: outline-offset 150ms ease, outline-color 150ms ease;
+    }
+
+    .card--interactive:hover,
+    .card--interactive:focus-visible {
+        outline: 2px solid var(--cc-border-color);
+        outline-offset: 2px;
+    }
+}

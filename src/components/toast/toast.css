@@ -1,0 +1,32 @@
+@layer components {
+    .toast-container {
+        position: fixed;
+        bottom: var(--cc-spacing-xl);
+        right: var(--cc-spacing-xl);
+        z-index: 1000;
+        pointer-events: none;
+    }
+
+    .toast {
+        border-radius: var(--cc-radius-md, 0.5rem);
+        padding: var(--cc-spacing-sm) var(--cc-spacing-md);
+        pointer-events: all;
+        min-width: 15rem;
+        max-width: 22.5rem;
+    }
+
+    .toast__message {
+        flex: 1;
+        font-size: var(--cc-font-size-sm);
+    }
+
+    .toast__dismiss {
+        background: none;
+        flex-shrink: 0;
+        transition: transform 150ms ease;
+    }
+
+    .toast__dismiss:hover .icon {
+        transform: scale(1.1);
+    }
+}
