@@ -346,6 +346,50 @@ Play a 4-sentence tutor turn; confirm the first sentence begins playing before t
 ---
 
 ## Phase 6 — Multi-Language Architecture
+## Phase 5 — TTS Latency: Parallel Synthesis
+
+> **Why:** The current pipeline calls `POST /tts/speak` for each sentence sequentially — sentence 2 is not synthesised until sentence 1 finishes playing. For a 4-sentence response this multiplies the silence gap between LLM output and first audio. Synthesising all sentences in parallel and queuing them for ordered playback eliminates most of this gap.
+
+### 5a. Sidecar: confirm thread-safety of parallel /tts/speak calls
+
+The sidecar runs `ThreadPoolExecutor(max_workers=1)`. Parallel TTS requires either:
+- Bumping `max_workers` to the expected max sentence count (simplest), OR
+- A dedicated `POST /tts/speak_batch` endpoint that accepts `[str]` and returns `[wav_bytes]` serialised inside the single worker
+
+Verify that MLX TTS is safe to call concurrently (shared model state) before choosing bump vs. batch.
+
+### 5b. Rust: parallel synthesis + ordered playback
+
+**File:** `src-tauri/src/lib.rs` → `handle_turn()`
+
+After splitting the LLM response into sentences:
+
+```rust
+// Current:
+for sentence in &sentences {
+    let wav = llm_client.tts(sentence).await?;
+    player.play(wav).await?;
+}
+
+// Target:
+let wav_futures: Vec<_> = sentences.iter()
+    .map(|s| llm_client.tts(s))
+    .collect();
+let wavs = futures::future::join_all(wav_futures).await;
+for wav in wavs {
+    player.play(wav?).await?;
+}
+```
+
+Sentence splitting already happens in `lib.rs`; no new parsing needed. Add `futures` to `src-tauri/Cargo.toml` (or use `tokio::try_join!` for fixed-count cases).
+
+### 5c. Verification
+
+Play a 4-sentence tutor turn; confirm the first sentence begins playing before the 4th synthesis request would have completed under the old sequential path. Measure wall-clock gap between `response_done` event and first audio sample.
+
+---
+
+## Phase 6 — Multi-Language Architecture
 
 > **Why:** The project is a Japanese tutor but the codebase should be able to teach any language. All Japanese-specific logic (JLPT levels, kanji/hiragana constraints, drill keywords, TTS voice) is hardcoded in the `tutor` crate. Extracting it into a `LanguageConfig` trait makes every language a first-class citizen.
 
@@ -396,6 +440,7 @@ Add `language_code TEXT NOT NULL DEFAULT 'ja'` to `curriculum`, `vocabulary`, `s
 
 ---
 
+## Phase 7 — Journal Feature
 ## Phase 7 — Journal Feature
 
 > **Why:** Personal vocabulary (words anchored to the learner's own experiences) has significantly higher retention than abstract word lists. The journal lets a learner write freely; the LLM identifies which words are worth adding to their SRS deck.
@@ -465,6 +510,26 @@ src/components/journal/
 - Extracted words displayed as `<Badge>` chips (Phase 4a)
 - "Add to deck" per-word toggle uses `<Switch>` (existing design system)
 
+### 7e. Robust JSON parser utility
+
+> **Why:** `extract_journal_words` and the turn classifier both parse LLM JSON that is frequently malformed (unclosed strings, markdown fences, truncated arrays). Defensive parsing written once prevents silent data loss across all structured outputs.
+
+**File:** `src-tauri/crates/tutor/src/json_parser.rs`
+
+```rust
+pub fn parse_json_array(raw: &str) -> Vec<serde_json::Value>
+// 1. Strip leading/trailing markdown fences (```json … ```)
+// 2. Extract substring between outermost [ and ]
+// 3. serde_json::from_str — if Ok, return
+// 4. On error: close unclosed string literals, retry
+// 5. Fall back to vec![] rather than propagating
+```
+
+Unit tests: clean input, markdown fence, truncated array, missing closing bracket, empty string.
+
+Apply to `extract_journal_words` return parsing and to the turn classifier response in `crates/llm/src/client.rs`.
+
+---
 ### 7e. Robust JSON parser utility
 
 > **Why:** `extract_journal_words` and the turn classifier both parse LLM JSON that is frequently malformed (unclosed strings, markdown fences, truncated arrays). Defensive parsing written once prevents silent data loss across all structured outputs.
@@ -636,10 +701,19 @@ pnpm dev   # visual check: Badge variants, Card, Toast trigger, Progress
 # Manual: 4-sentence tutor turn; confirm sentence 1 plays before synthesis 4 would complete
 
 # Phase 6
+# Manual: 4-sentence tutor turn; confirm sentence 1 plays before synthesis 4 would complete
+
+# Phase 6
 cargo test --package tutor   # LanguageConfig trait tests
 
 # Phase 7
+# Phase 7
 cargo test --package db      # journal tables created
+cargo test --package tutor   # extract_journal_words JSON parsing + json_parser unit tests
+
+# Phase 9
+cargo test --package db      # shadow tables created
+cargo test --package tutor   # similarity() edge cases
 cargo test --package tutor   # extract_journal_words JSON parsing + json_parser unit tests
 
 # Phase 9

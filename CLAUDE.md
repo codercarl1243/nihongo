@@ -45,3 +45,20 @@ over a single `run_audio_pipeline()` that captures, resamples, and feeds VAD in 
 - Recommended hardware: Apple M-series with ≥ 48 GB RAM (Qwen3-Omni-30B)
 - `pnpm` is the required package manager (enforced in `tauri.conf.json`)
 - TypeScript is configured with `strict: true` and `noUnusedLocals: true`
+
+<!-- scout -->
+## Project knowledge base (scout)
+
+This project has a scout knowledge base in `.scout/`. At the start of every
+conversation, read `.scout/architecture.md` to understand the codebase structure
+before answering questions or making changes.
+
+For semantic search over the codebase:
+
+```bash
+kb query nihongo "your question here"
+kb query nihongo "your question here" --k 8   # more results
+```
+
+Prefer `kb query` over guessing when asked about specific implementation details,
+data flow, or where something is defined.
