@@ -28,7 +28,6 @@ function ToastItem({ id, variant, message, duration }: Toast) {
             justify="between"
             align="center"
             gap="sm"
-            role="status"
         >
             <span className="toast__message">{message}</span>
             <Button
@@ -42,7 +41,7 @@ function ToastItem({ id, variant, message, duration }: Toast) {
 }
 
 export default function ToastContainer() {
-    
+
     const toasts = useAppStore((s) => s.toasts);
 
     if (toasts.length === 0) return null;
