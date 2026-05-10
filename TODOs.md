@@ -196,69 +196,51 @@ Implementation:
 
 ---
 
-## Phase 3 — Prompt Centralization
+## Phase 3 — Prompt Centralization ✅
 
 > **Why:** The 3 active LLM prompts are hardcoded Rust string constants buried in source files. Moving them to editable text files (loaded at compile time via `include_str!()`) makes them independently reviewable, diffable, and editable without touching Rust.
 
-### Current prompt locations (to migrate)
-
-| File | Constant | Lines |
-|------|----------|-------|
-| `crates/tutor/src/prompt.rs` | `SYSTEM_BASE` | 4–21 |
-| `crates/tutor/src/prompt.rs` | `INSTRUCTION_LANGUAGE_N5_N4` | 23–28 |
-| `crates/tutor/src/prompt.rs` | `INSTRUCTION_LANGUAGE_N3` | 30–34 |
-| `crates/tutor/src/prompt.rs` | `INSTRUCTION_LANGUAGE_N2_N1` | 36–39 |
-| `crates/tutor/src/session.rs` | summarizer (inline) | 78–88 |
-| `crates/llm/src/client.rs` | classifier (inline) | 196–203 |
-
-### Target file layout
+### Prompt file layout ✅
 
 ```
 prompts/
   languages/
     ja/
-      system-base.txt
-      level-1-2.txt          # N1/N2 — full Japanese
-      level-3.txt            # N3 — mixed
-      level-4-5.txt          # N4/N5 — English base
-  session-summarizer.txt
+      system-base.txt       # tutor persona + rules
+      level-1-2.txt         # N1/N2 — full Japanese, native complexity
+      level-3.txt           # N3 — mixed English/Japanese
+      level-4-5.txt         # N4/N5 — English base + romaji + basic kanji
+  session-summarizer.txt    # level-aware ({level_name} placeholder)
   turn-classifier.txt
-  journal-extractor.txt      # added in Phase 6
+  lesson-plan-generator.txt # AI-generated next-session plan
+  word-extractor.txt        # extracts introduced vocab per turn (Phase 4)
+  journal-extractor.txt     # added in Phase 6
 ```
 
-### Rust changes
+### Rust changes ✅
 
-```rust
-// prompt.rs
-const SYSTEM_BASE: &str                = include_str!("../../../../prompts/languages/ja/system-base.txt");
-const INSTRUCTION_LANGUAGE_N2_N1: &str = include_str!("../../../../prompts/languages/ja/level-1-2.txt");
-const INSTRUCTION_LANGUAGE_N3: &str    = include_str!("../../../../prompts/languages/ja/level-3.txt");
-const INSTRUCTION_LANGUAGE_N5_N4: &str = include_str!("../../../../prompts/languages/ja/level-4-5.txt");
+All 6 prompts now loaded via `include_str!()`. Legacy files `japanese-teacher.txt` and `tts-completion-dector.txt` deleted.
 
-// session.rs
-const SUMMARIZER_SYSTEM: &str = include_str!("../../../../prompts/session-summarizer.txt");
+### 3a. JLPT-level prompt granularity ✅
 
-// client.rs (llm crate)
-const CLASSIFIER_SYSTEM: &str = include_str!("../../../../prompts/turn-classifier.txt");
-```
+Updated rule changes vs. original:
+- **N4/N5:** Treats students as learners-in-progress (not complete beginners). Conducts in English. Includes romaji alongside ~80–166 JLPT N5/N4 kanji. ~800 vocab, basic particles.
+- **N3:** ~3 000 vocab, conditionals たら/ば/なら/と, ~650 kanji, mixed English/Japanese.
+- **N1/N2:** Full native complexity, all kanji unrestricted, ~6 000–10 000 vocab.
 
-**Dynamic `build_system_prompt()` is unchanged** — only the string source moves.
+Removed from `system-base.txt`: the two rules that blocked proactive teaching ("never volunteer definitions" and "only correct when the student asks"). Replaced with: curriculum-driven vocab introduction and gentle error correction.
 
-**Delete** the two unused legacy files: `prompts/japanese-teacher.txt`, `prompts/tts-completion-dector.txt`.
+### 3b. Level-aware session summariser ✅
 
-All existing `prompt.rs` tests (`n5_prompt_forbids_kanji()` etc.) continue to pass — they test the assembled output, not the source location.
+`session-summarizer.txt` uses a `{level_name}` runtime placeholder so the LLM summarises at the right level (not assuming beginner). `summary_request_messages()` in `session.rs` accepts `level_name: &str`.
 
-### 3a. Enhance JLPT-level prompt granularity
+### 3c. Lesson plan generation ✅
 
-While centralising prompts, expand each level file with explicit constraints. This is editorial work on the `.txt` files only — no Rust changes required.
+After `stop_session()`, the app calls the LLM with `lesson-plan-generator.txt` + the session summary notes to produce a 2–4 objective plan for the next session. Stored in the new `session_plans` DB table. Loaded into `SessionContext.lesson_plan` on next session start and injected into the system prompt.
 
-| Level file | Add to content |
-|------------|----------------|
-| `level-4-5.txt` | ~800 vocab, hiragana/katakana only, no kanji, basic particles は/が/を/に/で/へ |
-| `level-3.txt` | ~3 000 vocab, conditionals たら/ば/なら/と, ~650 kanji, mixed script |
-| `level-1-2.txt` | ~6 000–10 000 vocab, full native grammar complexity, all kanji unrestricted |
+**DB:** `session_plans (id, session_id, created_at, plan_text)` — `Db::save_session_plan()` / `Db::latest_session_plan()`
 
-Prompt unit tests (`n5_prompt_forbids_kanji()` etc.) must still pass.
+**Tests:** 20 tutor + 14 db tests all pass. Two N4/N5 kanji tests renamed and updated to assert the new romaji/kanji rule.
 
 ---
 
