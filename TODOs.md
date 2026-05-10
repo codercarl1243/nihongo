@@ -178,6 +178,22 @@ name = "test_aec"
 path = "src/bin/test_aec.rs"
 ```
 
+### 2e. Pre-onset ring buffer
+
+> **Why:** VAD confirmation requires ~3 consecutive frames (~90 ms). The first phoneme of every word is captured during this confirmation window and discarded. tama-desktop solves this with a small ring buffer of pre-onset audio that is prepended to the finalized segment before it goes to ASR.
+
+**File:** `src-tauri/crates/audio_engine/src/manager.rs`
+
+Implementation:
+- Add a `pre_speech_buf: VecDeque<f32>` sized to ~300 ms of 16 kHz audio (4 800 samples)
+- During VAD `Partial` / non-speech frames, push incoming samples into the ring; evict oldest samples to keep it at capacity
+- When VAD emits `turn_end`, prepend `pre_speech_buf` to the collected segment before sending to the sidecar for ASR
+- Clear the ring on `turn_end` so it does not bleed into the next utterance
+
+**Tests** (add to Phase 2b `#[cfg(test)]` block):
+- `pre_onset_buffer_prepended_on_turn_end` — confirms ring contents appear before the confirmed speech frames in the final segment
+- `pre_onset_buffer_cleared_after_turn` — confirms ring is empty after flush
+
 ---
 
 ## Phase 3 — Prompt Centralization
@@ -231,6 +247,18 @@ const CLASSIFIER_SYSTEM: &str = include_str!("../../../../prompts/turn-classifie
 **Delete** the two unused legacy files: `prompts/japanese-teacher.txt`, `prompts/tts-completion-dector.txt`.
 
 All existing `prompt.rs` tests (`n5_prompt_forbids_kanji()` etc.) continue to pass — they test the assembled output, not the source location.
+
+### 3a. Enhance JLPT-level prompt granularity
+
+While centralising prompts, expand each level file with explicit constraints. This is editorial work on the `.txt` files only — no Rust changes required.
+
+| Level file | Add to content |
+|------------|----------------|
+| `level-4-5.txt` | ~800 vocab, hiragana/katakana only, no kanji, basic particles は/が/を/に/で/へ |
+| `level-3.txt` | ~3 000 vocab, conditionals たら/ば/なら/と, ~650 kanji, mixed script |
+| `level-1-2.txt` | ~6 000–10 000 vocab, full native grammar complexity, all kanji unrestricted |
+
+Prompt unit tests (`n5_prompt_forbids_kanji()` etc.) must still pass.
 
 ---
 
@@ -292,7 +320,50 @@ Usage: `<Badge variant="primary">N3</Badge>` · `<Badge variant="success" appear
 
 ---
 
-## Phase 5 — Multi-Language Architecture
+## Phase 5 — TTS Latency: Parallel Synthesis
+
+> **Why:** The current pipeline calls `POST /tts/speak` for each sentence sequentially — sentence 2 is not synthesised until sentence 1 finishes playing. For a 4-sentence response this multiplies the silence gap between LLM output and first audio. Synthesising all sentences in parallel and queuing them for ordered playback eliminates most of this gap.
+
+### 5a. Sidecar: confirm thread-safety of parallel /tts/speak calls
+
+The sidecar runs `ThreadPoolExecutor(max_workers=1)`. Parallel TTS requires either:
+- Bumping `max_workers` to the expected max sentence count (simplest), OR
+- A dedicated `POST /tts/speak_batch` endpoint that accepts `[str]` and returns `[wav_bytes]` serialised inside the single worker
+
+Verify that MLX TTS is safe to call concurrently (shared model state) before choosing bump vs. batch.
+
+### 5b. Rust: parallel synthesis + ordered playback
+
+**File:** `src-tauri/src/lib.rs` → `handle_turn()`
+
+After splitting the LLM response into sentences:
+
+```rust
+// Current:
+for sentence in &sentences {
+    let wav = llm_client.tts(sentence).await?;
+    player.play(wav).await?;
+}
+
+// Target:
+let wav_futures: Vec<_> = sentences.iter()
+    .map(|s| llm_client.tts(s))
+    .collect();
+let wavs = futures::future::join_all(wav_futures).await;
+for wav in wavs {
+    player.play(wav?).await?;
+}
+```
+
+Sentence splitting already happens in `lib.rs`; no new parsing needed. Add `futures` to `src-tauri/Cargo.toml` (or use `tokio::try_join!` for fixed-count cases).
+
+### 5c. Verification
+
+Play a 4-sentence tutor turn; confirm the first sentence begins playing before the 4th synthesis request would have completed under the old sequential path. Measure wall-clock gap between `response_done` event and first audio sample.
+
+---
+
+## Phase 6 — Multi-Language Architecture
 
 > **Why:** The project is a Japanese tutor but the codebase should be able to teach any language. All Japanese-specific logic (JLPT levels, kanji/hiragana constraints, drill keywords, TTS voice) is hardcoded in the `tutor` crate. Extracting it into a `LanguageConfig` trait makes every language a first-class citizen.
 
@@ -343,7 +414,7 @@ Add `language_code TEXT NOT NULL DEFAULT 'ja'` to `curriculum`, `vocabulary`, `s
 
 ---
 
-## Phase 6 — Journal Feature
+## Phase 7 — Journal Feature
 
 > **Why:** Personal vocabulary (words anchored to the learner's own experiences) has significantly higher retention than abstract word lists. The journal lets a learner write freely; the LLM identifies which words are worth adding to their SRS deck.
 
@@ -412,9 +483,28 @@ src/components/journal/
 - Extracted words displayed as `<Badge>` chips (Phase 4a)
 - "Add to deck" per-word toggle uses `<Switch>` (existing design system)
 
+### 7e. Robust JSON parser utility
+
+> **Why:** `extract_journal_words` and the turn classifier both parse LLM JSON that is frequently malformed (unclosed strings, markdown fences, truncated arrays). Defensive parsing written once prevents silent data loss across all structured outputs.
+
+**File:** `src-tauri/crates/tutor/src/json_parser.rs`
+
+```rust
+pub fn parse_json_array(raw: &str) -> Vec<serde_json::Value>
+// 1. Strip leading/trailing markdown fences (```json … ```)
+// 2. Extract substring between outermost [ and ]
+// 3. serde_json::from_str — if Ok, return
+// 4. On error: close unclosed string literals, retry
+// 5. Fall back to vec![] rather than propagating
+```
+
+Unit tests: clean input, markdown fence, truncated array, missing closing bracket, empty string.
+
+Apply to `extract_journal_words` return parsing and to the turn classifier response in `crates/llm/src/client.rs`.
+
 ---
 
-## Phase 7 — Architecture Notes (From-Scratch View)
+## Phase 8 — Architecture Notes (From-Scratch View)
 
 ### Crate boundaries (current → ideal)
 
@@ -422,7 +512,7 @@ src/components/journal/
 |-------|--------|-------|
 | `audio_engine` | Acceptable post-Phase-2 | BargeInDetector + EchoTailTracker extracted as testable structs |
 | `llm` | Correct scope | Pure streaming LLM client |
-| `tutor` | Correct scope post-Phase-3/5 | Prompts external, language-agnostic |
+| `tutor` | Correct scope post-Phase-3/6 | Prompts external, language-agnostic |
 | `db` | Correct scope | SQLite schema + queries |
 | Missing: `config` | Low priority | Models.json loading is currently in Python sidecar |
 
@@ -435,6 +525,81 @@ No full crate split needed — Phase 2 struct extraction achieves testability wi
 ### Logging (deferred)
 
 25+ `eprintln!("[aec] ...")` statements tagged `// [PIPELINE_DEBUG]` will appear in production builds. Future work: gate behind a Cargo feature flag `audio-debug`.
+
+---
+
+## Phase 9 — Shadowing Mode
+
+> **Why:** Shadowing (listen → repeat) is the highest-leverage pronunciation practice for language learners. The audio pipeline (TTS, VAD, ASR) is already in place; this phase wires them into a structured drill loop. Modelled on tama-desktop's `ShadowModeScreen`.
+
+### 9a. Data model
+
+```sql
+CREATE TABLE shadow_sessions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id  INTEGER REFERENCES sessions(id),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE shadow_attempts (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    shadow_session_id INTEGER NOT NULL REFERENCES shadow_sessions(id),
+    turn_index        INTEGER NOT NULL,
+    expected_text     TEXT NOT NULL,
+    user_transcript   TEXT,
+    similarity        REAL,       -- 0.0–1.0
+    passed            INTEGER,    -- 1 = ≥ threshold, 0 = below
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+### 9b. Similarity scoring
+
+**File:** `src-tauri/crates/tutor/src/shadow.rs`
+
+```rust
+pub fn similarity(expected: &str, actual: &str) -> f32
+// Normalise both strings (lowercase, strip punctuation)
+// Character-level Levenshtein distance
+// Return 1.0 - (edit_distance as f32 / max_len as f32)
+// Pass threshold: 0.75
+```
+
+No external crate needed — implement inline.
+
+### 9c. Drill loop (Tauri command)
+
+`start_shadow_session(script: Vec<String>)` → for each line:
+1. TTS synthesises the line → plays audio → mutes mic
+2. 600 ms pause (echo tail)
+3. Unmute mic → VAD captures user repetition → ASR transcribes
+4. `shadow::similarity(expected, transcript)` → emit `shadow_result` event
+5. Store attempt in DB
+
+`stop_shadow_session()` → emit `shadow_summary` event (all attempts + overall score).
+
+### 9d. Frontend
+
+```
+src/components/shadow/
+  ShadowScreen.tsx   ← drill UI: phrase display, waveform, per-line result
+  useShadow.ts       ← listen for shadow_result / shadow_summary events
+```
+
+**States:** `playing` → `waiting` → `recording` → `scored` → (next line or) `complete`
+
+Result display: colour-coded per attempt (green ≥ 0.75, amber 0.5–0.75, red < 0.5). Summary screen shows overall pass rate and lists failed lines for retry.
+
+### 9e. Script generation
+
+Add `generate_shadow_script(topic: &str, level: u8) -> Vec<String>` Tauri command that calls the LLM to produce 5–10 phrases at the learner's level. Alternatively, offer to shadow the tutor's existing conversation output (replay prior tutor lines without a new LLM call).
+
+### 9f. Verification
+
+- Unit test `similarity()` with known inputs (identical strings → 1.0, empty → 0.0, near-match)
+- `cargo test --package db` — shadow tables created, foreign keys valid
+- `cargo test --package tutor` — similarity edge cases
+- Manual: start a shadow session, speak a phrase, confirm score appears and is stored
 
 ---
 
@@ -461,11 +626,18 @@ cargo test --package tutor   # existing prompt tests must still pass
 pnpm dev   # visual check: Badge variants, Card, Toast trigger, Progress
 
 # Phase 5
-cargo test --package tutor   # LanguageConfig trait tests
+# Manual: 4-sentence tutor turn; confirm sentence 1 plays before synthesis 4 would complete
 
 # Phase 6
+cargo test --package tutor   # LanguageConfig trait tests
+
+# Phase 7
 cargo test --package db      # journal tables created
-cargo test --package tutor   # extract_journal_words JSON parsing
+cargo test --package tutor   # extract_journal_words JSON parsing + json_parser unit tests
+
+# Phase 9
+cargo test --package db      # shadow tables created
+cargo test --package tutor   # similarity() edge cases
 
 # Full regression
 cargo test

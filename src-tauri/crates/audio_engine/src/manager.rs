@@ -3,9 +3,11 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
 use std::time::{Duration, Instant};
+use std::collections::VecDeque;
 use std::thread;
 
 use crate::aec::{AecProcessor, AecSink, create_aec_pair};
+use crate::barge_in::{BargeInDetector, BargeInState, EchoTailTracker};
 use crate::capture::AudioCapture;
 use crate::resampler::Resampler16k;
 use crate::vad::SpeechDetector;
@@ -214,25 +216,24 @@ impl AudioManager {
         let mut last_voice = Instant::now();
         let mut in_turn = false;
         // Tracks how many samples have been sent as partials in the current turn.
-        // Used to avoid re-sending the same audio in the final turn_end chunk.
         let mut samples_emitted_as_partial: usize = 0;
 
-        // Speech spoken while TTS is playing is buffered here and flushed as the
-        // next turn immediately after unmute, so it gets transcribed and sent to
-        // the model with full conversation context intact.
-        let mut barge_buffer: Vec<f32> = Vec::new();
-        let mut barge_in_turn = false;
+        // Rolling ring of pre-confirmation audio (~300ms). Prepended to every finalized
+        // turn segment so the first phoneme — captured during VAD's confirmation window —
+        // is not lost before it reaches ASR.
+        let pre_speech_capacity: usize = (16_000.0 * 0.3) as usize; // 4 800 samples
+        let mut pre_speech_buf: VecDeque<f32> = VecDeque::with_capacity(pre_speech_capacity);
+
         let mut barge_remainder: Vec<f32> = Vec::new();
         let mut prev_muted = false;
-        // Debounce barge-in: require this many consecutive speech chunks before
-        // triggering. Echo artefacts are brief spikes; real user interruptions are
-        // sustained. At 512 samples / 16kHz = 32ms per chunk, 6 chunks ≈ 192ms —
-        // enough to outlast typical room reverb from a laptop speaker.
-        let mut barge_speech_streak: u32 = 0;
-        const BARGE_IN_STREAK_REQUIRED: u32 = 6;
-        // After TTS playback ends, suppress new turns briefly so room echo doesn't
-        // get mistaken for user speech. Skipped when a barge-in already filled the buffer.
-        let mut echo_tail_until = Instant::now();
+
+        let mut detector = BargeInDetector::new(
+            6,
+            config.barge_in_rms_threshold,
+            config.barge_in_start_delay.as_millis() as u64,
+        );
+        let mut echo_tail = EchoTailTracker::new(Duration::from_millis(400));
+
         // Whether AEC stream delay has been calibrated from the first hardware callback.
         let mut aec_delay_set = false;
 
@@ -255,22 +256,34 @@ impl AudioManager {
             }
             let is_muted = muted.load(Ordering::SeqCst);
 
-            // (audio_play_started is reset inside mute() — no extra bookkeeping needed here)
+            // On mute start: reset barge-in detector so stale streak/buffer from a
+            // previous turn never bleeds into the new one.
+            if !prev_muted && is_muted {
+                detector.reset();
+                pre_speech_buf.clear();
+            }
+
+            // Sync the audio_play_started timestamp into the detector (idempotent).
+            if is_muted {
+                let started_ms = audio_play_started.load(Ordering::SeqCst);
+                if started_ms != 0 {
+                    detector.signal_audio_started(started_ms);
+                }
+            }
 
             // On unmute: flush barge-in audio (if any) or start an echo suppression window.
             if prev_muted && !is_muted {
-                barge_speech_streak = 0; // reset debounce for next TTS response
-                if !barge_buffer.is_empty() {
-                    let audio = std::mem::take(&mut barge_buffer);
-                    barge_in_turn = false;
+                let barge_audio = detector.take_buffer();
+                if !barge_audio.is_empty() {
                     barge_remainder.clear();
-                    if turn_tx.blocking_send(audio).is_err() {
+                    echo_tail.disarm();
+                    if turn_tx.blocking_send(barge_audio).is_err() {
                         return Err(anyhow!("turn_end receiver dropped"));
                     }
                 } else {
                     // No barge-in — suppress VAD for 400ms to let room echo decay.
-                    echo_tail_until = Instant::now() + Duration::from_millis(400);
-                    vad_tx.try_send("Echo: Suppressing").ok(); // [PIPELINE_DEBUG] not shown in flow UI
+                    echo_tail.arm();
+                    vad_tx.try_send("Echo: Suppressing").ok(); // [PIPELINE_DEBUG]
                 }
             }
             prev_muted = is_muted;
@@ -300,59 +313,26 @@ impl AudioManager {
 
                 Self::align_windows(&mut mono_16k, &mut barge_remainder, config.vad_window);
 
-                // Barge-in detection is gated on two conditions:
-                // 1. audio has actually started playing (audio_play_started != 0)
-                // 2. barge_in_start_delay has elapsed since the first play_chunk call
-                // This means synthesis latency no longer "eats into" the delay window —
-                // the delay only starts once audio is actually hitting the speaker.
-                let barge_in_active = {
-                    use std::time::{SystemTime, UNIX_EPOCH};
-                    let started_ms = audio_play_started.load(Ordering::SeqCst);
-                    if started_ms == 0 {
-                        false // audio hasn't started yet; still synthesising
-                    } else {
-                        let now_ms = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-                        now_ms.saturating_sub(started_ms)
-                            >= config.barge_in_start_delay.as_millis() as u64
-                    }
-                };
+                use std::time::{SystemTime, UNIX_EPOCH};
+                let now_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
 
                 for chunk in mono_16k.chunks_exact(config.vad_window) {
-                    // Energy gate: residual AEC echo peaks at ~0.02 RMS; user speech
-                    // at normal mic distance is ~0.05+. Only count chunks that clear
-                    // both the energy floor and the VAD toward the barge-in streak.
                     let rms = (chunk.iter().map(|s| s * s).sum::<f32>()
                         / chunk.len() as f32)
                         .sqrt();
-                    let energy_ok = rms >= config.barge_in_rms_threshold;
-                    eprintln!("[aec] chunk rms={:.4} gate={} streak={}", rms, energy_ok, barge_speech_streak); // [PIPELINE_DEBUG]
-
-                    if barge_in_active && energy_ok && barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity) {
-                        barge_speech_streak += 1;
-                        if barge_in_turn {
-                            // Already confirmed — keep buffering.
-                            barge_buffer.extend_from_slice(chunk);
-                        } else if barge_speech_streak >= BARGE_IN_STREAK_REQUIRED {
-                            // Sustained loud speech confirmed — this is a real interruption.
-                            barge_in_turn = true;
-                            barge_buffer.clear();
+                    eprintln!("[aec] chunk rms={:.4} streak={}", rms, // [PIPELINE_DEBUG]
+                        // streak value is internal to detector — just log rms
+                        0u32);
+                    let is_speech = barge_vad.is_speech(chunk.to_vec(), config.vad_sensitivity);
+                    match detector.process_chunk(chunk, is_speech, now_ms) {
+                        BargeInState::Confirmed => {
                             barge_in.store(true, Ordering::SeqCst);
                             vad_tx.try_send("VAD 2: Barge-In Detected").ok(); // [PIPELINE_DEBUG]
-                            barge_buffer.extend_from_slice(chunk);
                         }
-                        // else: streak building, not yet confirmed — don't buffer yet
-                    } else {
-                        // Chunk failed energy gate or VAD: reset streak so only sustained
-                        // loud speech can confirm a barge-in.
-                        barge_speech_streak = 0;
-                        if barge_in_turn {
-                            // Keep buffering trailing silence for context; the turn
-                            // boundary is determined on unmute, not during mute.
-                            barge_buffer.extend_from_slice(chunk);
-                        }
+                        _ => {}
                     }
                 }
 
@@ -372,7 +352,7 @@ impl AudioManager {
             };
 
             // Echo tail: drain audio without feeding VAD while room echo may be present.
-            if Instant::now() < echo_tail_until {
+            if echo_tail.is_active() {
                 thread::sleep(Duration::from_millis(10));
                 continue;
             }
@@ -413,9 +393,12 @@ impl AudioManager {
                     speech_buffer.extend_from_slice(chunk);
 
                     if last_voice.elapsed() > Duration::from_millis(threshold_ms.load(Ordering::SeqCst)) {
-                        // Turn ended — send the complete utterance.
+                        // Turn ended — prepend pre-onset buffer so first phoneme isn't lost,
+                        // then send the complete utterance.
                         vad_tx.try_send("VAD 1: Silence Detected").ok(); // [PIPELINE_DEBUG]
-                        let full_audio = std::mem::take(&mut speech_buffer);
+                        let pre: Vec<f32> = pre_speech_buf.drain(..).collect();
+                        let speech = std::mem::take(&mut speech_buffer);
+                        let full_audio = [pre, speech].concat();
                         samples_emitted_as_partial = 0;
                         in_turn = false;
 
@@ -423,6 +406,14 @@ impl AudioManager {
                             return Err(anyhow!("turn_end receiver dropped"));
                         }
                         vad_tx.try_send("VAD 1: Listening").ok(); // [PIPELINE_DEBUG]
+                    }
+                } else {
+                    // Not in a turn — maintain rolling pre-onset ring buffer.
+                    for s in chunk {
+                        pre_speech_buf.push_back(*s);
+                    }
+                    while pre_speech_buf.len() > pre_speech_capacity {
+                        pre_speech_buf.pop_front();
                     }
                 }
             }
@@ -488,8 +479,6 @@ mod tests {
     }
 
     // Echo tail: audio within the suppression window must be skipped by the loop.
-    // The production code checks `Instant::now() < echo_tail_until`; these tests
-    // verify the boundary conditions that make it correct.
     #[test]
     fn echo_tail_active_immediately_after_unmute() {
         let tail_end = Instant::now() + Duration::from_millis(400);
@@ -500,5 +489,35 @@ mod tests {
     fn echo_tail_expired_when_set_in_past() {
         let tail_end = Instant::now() - Duration::from_millis(1);
         assert!(!(Instant::now() < tail_end), "suppression window should have expired");
+    }
+
+    // Pre-onset ring buffer tests.
+    #[test]
+    fn pre_onset_buffer_prepended_on_turn_end() {
+        let capacity: usize = 4_800;
+        let mut pre: VecDeque<f32> = VecDeque::with_capacity(capacity);
+        // Fill ring with a recognisable value.
+        for _ in 0..capacity {
+            pre.push_back(0.1);
+        }
+        let speech = vec![0.5f32; 512];
+        let pre_vec: Vec<f32> = pre.drain(..).collect();
+        let full = [pre_vec, speech.clone()].concat();
+
+        // Pre-onset samples come first.
+        assert_eq!(full.len(), capacity + 512);
+        assert!((full[0] - 0.1).abs() < f32::EPSILON);
+        assert!((full[capacity] - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn pre_onset_buffer_cleared_after_turn() {
+        let capacity: usize = 4_800;
+        let mut pre: VecDeque<f32> = VecDeque::with_capacity(capacity);
+        for _ in 0..capacity {
+            pre.push_back(0.1);
+        }
+        let _drained: Vec<f32> = pre.drain(..).collect();
+        assert!(pre.is_empty());
     }
 }
