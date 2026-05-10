@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use db::{Db, LessonSummary, TopicStatus};
 use llm::{ChatMessage, TutorResponse};
 use anyhow::Result;
 
+use crate::language::LanguageConfig;
 use crate::prompt::build_system_prompt;
 
 const CHARS_PER_TOKEN: usize = 4;
@@ -12,10 +15,11 @@ pub struct TutorSession {
     messages:       Vec<ChatMessage>,
     token_estimate: usize,
     session_id:     i64,
+    lang:           Arc<dyn LanguageConfig>,
 }
 
 impl TutorSession {
-    pub fn new(db: &Db) -> Result<Self> {
+    pub fn new(db: &Db, lang: Arc<dyn LanguageConfig>) -> Result<Self> {
         let ctx = db.session_context()?;
 
         // Ensure the active topic is recorded as in_progress.
@@ -24,14 +28,18 @@ impl TutorSession {
         }
 
         let session_id = db.start_session()?;
-        let system_msg = build_system_prompt(&ctx);
+        let system_msg = build_system_prompt(&ctx, lang.as_ref());
         let estimate   = token_estimate(&system_msg.content);
-        Ok(Self { messages: vec![system_msg], token_estimate: estimate, session_id })
+        Ok(Self { messages: vec![system_msg], token_estimate: estimate, session_id, lang })
     }
 
     pub fn session_id(&self) -> i64 { self.session_id }
 
     pub fn current_messages(&self) -> &[ChatMessage] { &self.messages }
+
+    /// Returns a clone of the language config Arc for callers that need to
+    /// rebuild the system prompt (e.g. context compaction).
+    pub fn lang(&self) -> Arc<dyn LanguageConfig> { Arc::clone(&self.lang) }
 
     pub fn push_user(&mut self, transcript: &str) {
         self.messages.push(ChatMessage::user(transcript));

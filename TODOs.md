@@ -551,7 +551,7 @@ Apply to `extract_journal_words` return parsing and to the turn classifier respo
 
 ---
 
-## Phase 8 — Architecture Notes (From-Scratch View)
+## Phase 8 — Architecture Notes + Data-Driven Language Packs
 
 ### Crate boundaries (current → ideal)
 
@@ -569,6 +569,42 @@ No full crate split needed — Phase 2 struct extraction achieves testability wi
 
 `Models.json` lists `RakutenAI-7B-instruct-MLX-4bit` as the LLM. `README.md` still references `Qwen3.6-27B-4bit`. Update README to match.
 
+### 8a. Data-driven language packs
+
+> **Why:** Phase 6 extracted all Japanese-specific logic behind `LanguageConfig`, but `Japanese` is still a compiled Rust struct. Adding a new language currently requires writing Rust code. Replacing it with a DB-loaded `LanguagePack` record makes language support purely data — no recompile needed. The same table also drives the sidecar's TTS voice selection, removing the last hardcoded `"Ono_Anna"` from Python.
+
+**New DB table:**
+
+```sql
+CREATE TABLE language_packs (
+    language_code   TEXT PRIMARY KEY,            -- 'ja', 'es', 'fr'
+    language_name   TEXT NOT NULL,               -- 'Japanese', 'Spanish'
+    level_system    TEXT NOT NULL DEFAULT 'jlpt',-- 'jlpt' | 'cefr'
+    level_count     INTEGER NOT NULL DEFAULT 5,
+    tts_voice_local TEXT NOT NULL,               -- passed to sidecar /tts/speak
+    tts_voice_cloud TEXT,                        -- used when cloud backend active
+    asr_language    TEXT NOT NULL DEFAULT 'auto',-- hint passed to sidecar /asr/transcribe
+    script_type     TEXT NOT NULL DEFAULT 'logographic', -- 'logographic' | 'alphabetic'
+    installed_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+Seed with the Japanese pack on `migrate_to_v3()`. Prompt/instruction files for each pack live in `prompts/languages/{language_code}/`.
+
+**Replace compiled `Japanese` struct:**
+
+`src-tauri/crates/db/src/lib.rs` — add `Db::active_language_pack() -> Result<LanguagePack>`.
+
+`src-tauri/crates/tutor/src/language.rs` — add `DbLanguagePack` that implements `LanguageConfig` by reading from the loaded record. The compiled `Japanese` struct becomes a fallback / test fixture only.
+
+`src-tauri/src/lib.rs` — `start_session()` calls `db.active_language_pack()` and wraps it in `Arc<dyn LanguageConfig>` instead of `Arc::new(Japanese)`.
+
+**Sidecar: accept voice + language as request params:**
+
+`sidecar/server.py` — `/tts/speak` accepts an optional `voice` field in the request body (falls back to the model default if absent). `/asr/transcribe` accepts an optional `language` hint. Both fields are passed through from the Rust `SidecarClient`.
+
+`src-tauri/crates/llm/src/client.rs` — `tts(text, voice: &str)` and `transcribe(audio, language: Option<&str>)` updated to send these fields.
+
 ### Logging (deferred)
 
 25+ `eprintln!("[aec] ...")` statements tagged `// [PIPELINE_DEBUG]` will appear in production builds. Future work: gate behind a Cargo feature flag `audio-debug`.
@@ -583,9 +619,10 @@ No full crate split needed — Phase 2 struct extraction achieves testability wi
 
 ```sql
 CREATE TABLE shadow_sessions (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id  INTEGER REFERENCES sessions(id),
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id    INTEGER REFERENCES sessions(id),
+    language_code TEXT NOT NULL DEFAULT 'ja',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE shadow_attempts (
@@ -600,17 +637,24 @@ CREATE TABLE shadow_attempts (
 );
 ```
 
+`language_code` on `shadow_sessions` mirrors `journal_entries` — needed to score attempts correctly when the similarity function is script-aware (see 9b).
+
 ### 9b. Similarity scoring
 
 **File:** `src-tauri/crates/tutor/src/shadow.rs`
 
 ```rust
-pub fn similarity(expected: &str, actual: &str) -> f32
+pub enum ScriptType { Logographic, Alphabetic }
+
+pub fn similarity(expected: &str, actual: &str, script: ScriptType) -> f32
 // Normalise both strings (lowercase, strip punctuation)
-// Character-level Levenshtein distance
+// Logographic  → character-level Levenshtein (ideal for Japanese morae)
+// Alphabetic   → word-level Levenshtein      (better for Spanish/French)
 // Return 1.0 - (edit_distance as f32 / max_len as f32)
 // Pass threshold: 0.75
 ```
+
+`ScriptType` maps to the `script_type` field on `language_packs` (Phase 8a). No external crate needed — implement both paths inline.
 
 No external crate needed — implement inline.
 
@@ -701,10 +745,11 @@ pnpm dev   # visual check: Badge variants, Card, Toast trigger, Progress
 # Manual: 4-sentence tutor turn; confirm sentence 1 plays before synthesis 4 would complete
 
 # Phase 6
-# Manual: 4-sentence tutor turn; confirm sentence 1 plays before synthesis 4 would complete
+cargo test --package tutor   # LanguageConfig trait tests (language.rs)
 
-# Phase 6
-cargo test --package tutor   # LanguageConfig trait tests
+# Phase 8
+cargo test --package db      # language_packs table seeded, active_language_pack() returns Japanese
+cargo test --package tutor   # DbLanguagePack implements LanguageConfig correctly
 
 # Phase 7
 # Phase 7

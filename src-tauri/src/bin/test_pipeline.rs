@@ -32,7 +32,7 @@ use tokio_stream::StreamExt;
 
 use db::{LearnerProfile, SessionContext};
 use llm::{SidecarClient, StreamItem};
-use tutor::build_system_prompt_pub;
+use tutor::{build_system_prompt_pub, Japanese};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -176,7 +176,7 @@ async fn ask_llm(llm: &SidecarClient, level: u8, user_input: &str) -> anyhow::Re
         last_notes: None,
     };
 
-    let system_msg = build_system_prompt_pub(&ctx);
+    let system_msg = build_system_prompt_pub(&ctx, &Japanese);
     let user_msg   = llm::ChatMessage::user(user_input);
     let messages   = vec![system_msg, user_msg];
 

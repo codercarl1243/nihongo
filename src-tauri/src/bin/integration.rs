@@ -30,7 +30,8 @@ use tokio_stream::StreamExt;
 use audio_engine::AudioPlayer;
 use db::Db;
 use llm::SidecarClient;
-use tutor::{parse_response_pub, TutorSession};
+use tutor::{Japanese, parse_response_pub, TutorSession};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -66,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     // ── 3. TutorSession + system prompt ──────────────────────────────────────
     step(3, 6, "TutorSession + system prompt");
     let session_result = (|| -> anyhow::Result<TutorSession> {
-        let mut session = TutorSession::new(&db)?;
+        let mut session = TutorSession::new(&db, Arc::new(Japanese))?;
         session.push_user(&greeting());
         Ok(session)
     })();

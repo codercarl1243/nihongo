@@ -33,6 +33,19 @@ impl Db {
         if version < 1 {
             self.migrate_to_v1()?;
         }
+        if version < 2 {
+            self.migrate_to_v2()?;
+        }
+        Ok(())
+    }
+
+    fn migrate_to_v2(&self) -> Result<()> {
+        self.conn.execute_batch("
+            ALTER TABLE topics             ADD COLUMN language_code TEXT NOT NULL DEFAULT 'ja';
+            ALTER TABLE vocabulary         ADD COLUMN language_code TEXT NOT NULL DEFAULT 'ja';
+            ALTER TABLE student_vocabulary ADD COLUMN language_code TEXT NOT NULL DEFAULT 'ja';
+            PRAGMA user_version = 2;
+        ")?;
         Ok(())
     }
 
