@@ -73,7 +73,14 @@ export const useAppStore = create<AppState>((set) => ({
     setPipelineStage: (pipelineStage) => set({ pipelineStage }), // [PIPELINE_DEBUG]
     addToast: ({ variant, message, duration = 4000 }) =>
         set((s) => ({
-            toasts: [...s.toasts, { id: crypto.randomUUID(), variant, message, duration }],
+            toasts: [
+                ...s.toasts,
+                { 
+                    id: crypto.randomUUID(), 
+                    variant, 
+                    message, 
+                    duration: Number.isFinite(duration) && duration > 0 ? duration : 4000
+                }],
         })),
     removeToast: (id) =>
         set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
