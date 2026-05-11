@@ -110,7 +110,9 @@ pub async fn handle_turn(
         while let Some(handle) = wav_handle_rx.recv().await {
             if !tts_started {
                 app.emit("pipeline_status", PipelineStatusEvent { stage: "TTS: Synthesizing".into() }).ok(); // [PIPELINE_DEBUG]
-                state.audio.lock().unwrap().mute();
+                // resume() here so the player is ready; mute() is deferred
+                // until the WAV is in hand (below) — keeps the mic live during
+                // synthesis latency so the user can barge in or speak freely.
                 state.player.lock().unwrap().resume();
                 tts_started = true;
             }
@@ -124,6 +126,11 @@ pub async fn handle_turn(
             }
             let wav = handle.await.map_err(|e| anyhow::anyhow!("TTS task panicked: {e}"))??;
             let pcm = wav_to_f32(&wav)?;
+            // Mute immediately before the first chunk hits the speaker so the
+            // mic is only silenced during actual playback, not synthesis.
+            if total_samples == 0 {
+                state.audio.lock().unwrap().mute();
+            }
             total_samples += pcm.len();
             state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
             if let Some(ref sink) = *state.aec_sink.lock().unwrap() {
