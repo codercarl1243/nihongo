@@ -1,3 +1,4 @@
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -6,6 +7,27 @@ use tokio_stream::StreamExt as _;
 use crate::events::{SidecarStatusEvent, VoiceVoxStatusEvent};
 use crate::AppState;
 use crate::SIDECAR_DIR;
+
+// ---------------------------------------------------------------------------
+// Managed child processes — all processes killed on exit live here.
+// Add new entries as needed; `shutdown()` iterates them all.
+// ---------------------------------------------------------------------------
+
+static SIDECAR_CHILD:  Mutex<Option<std::process::Child>> = Mutex::new(None);
+static VOICEVOX_CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
+
+/// Kill all managed background processes. Called once when the app window closes.
+pub fn shutdown() {
+    kill_child(&SIDECAR_CHILD);
+    kill_child(&VOICEVOX_CHILD);
+}
+
+fn kill_child(slot: &Mutex<Option<std::process::Child>>) {
+    if let Some(mut child) = slot.lock().unwrap().take() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Python sidecar
@@ -46,15 +68,17 @@ pub async fn start_sidecar_background(app: AppHandle) {
         return;
     }
 
-    // Spawn start.sh detached. stdout/stderr inherit so log output stays
-    // visible in the terminal where the app was launched.
-    if let Err(e) = std::process::Command::new("bash")
+    // Spawn start.sh. stdout/stderr inherit so log output stays visible in
+    // the terminal where the app was launched. The handle is stored so
+    // shutdown() can kill the process (start.sh uses `exec uvicorn`, so the
+    // stored PID is uvicorn's PID once the script hands off).
+    match std::process::Command::new("bash")
         .arg("start.sh")
         .current_dir(SIDECAR_DIR)
         .spawn()
     {
-        emit("error", Some(format!("Failed to launch sidecar: {e}")));
-        return;
+        Ok(child) => { *SIDECAR_CHILD.lock().unwrap() = Some(child); }
+        Err(e)    => { emit("error", Some(format!("Failed to launch sidecar: {e}"))); return; }
     }
 
     // Poll every 2 s for up to 2 minutes.
@@ -134,8 +158,8 @@ async fn run_voicevox_background(app: &AppHandle) -> anyhow::Result<()> {
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn VoiceVox Engine at {}: {e}", run_bin.display()))?;
 
-    // Store the handle so the app can kill it cleanly on exit.
-    *app.state::<AppState>().voicevox_child.lock().unwrap() = Some(child);
+    // Store the handle so shutdown() can kill it cleanly on exit.
+    *VOICEVOX_CHILD.lock().unwrap() = Some(child);
 
     // Poll until healthy (up to 60 s).
     let deadline = tokio::time::Instant::now() + Duration::from_secs(60);

@@ -15,4 +15,4 @@ echo "Installing dependencies…"
 pip install -q -r requirements.txt
 
 echo "Starting sidecar on http://127.0.0.1:8091"
-uvicorn server:app --host 127.0.0.1 --port 8091
+exec uvicorn server:app --host 127.0.0.1 --port 8091
