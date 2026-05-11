@@ -129,10 +129,13 @@ async fn run_voicevox_background(app: &AppHandle) -> anyhow::Result<()> {
     // Start the engine binary.
     emit("starting", None, Some("Starting VoiceVox Engine…"));
     let run_bin = engine_dir.join("run");
-    std::process::Command::new(&run_bin)
+    let child = std::process::Command::new(&run_bin)
         .args(["--host", VOICEVOX_HOST, "--port", &VOICEVOX_PORT.to_string()])
         .spawn()
         .map_err(|e| anyhow::anyhow!("failed to spawn VoiceVox Engine at {}: {e}", run_bin.display()))?;
+
+    // Store the handle so the app can kill it cleanly on exit.
+    *app.state::<AppState>().voicevox_child.lock().unwrap() = Some(child);
 
     // Poll until healthy (up to 60 s).
     let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
