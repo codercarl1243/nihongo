@@ -220,22 +220,24 @@ async fn download_and_extract(
 
     emit("extracting", None, Some("Extracting VoiceVox Engine…"));
 
-    let tmp_path_clone  = tmp_path.clone();
-    let sidecar_dir     = std::path::Path::new(SIDECAR_DIR).to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        sevenz_rust2::decompress_file(&tmp_path_clone, &sidecar_dir)
-            .map_err(|e| anyhow::anyhow!("7z extraction failed: {e}"))
-    }).await
-        .map_err(|e| anyhow::anyhow!("extraction task panicked: {e}"))??;
+    // Use 7zz (p7zip) rather than a pure-Rust library: it correctly restores
+    // symlinks and Unix permissions that sevenz-rust2 silently drops.
+    let status = tokio::process::Command::new("7zz")
+        .args(["x", "-y", tmp_path.to_str().unwrap(), &format!("-o{SIDECAR_DIR}")])
+        .status().await
+        .map_err(|e| anyhow::anyhow!("failed to run 7zz: {e}"))?;
+    if !status.success() {
+        anyhow::bail!("7zz extraction failed with status {status}");
+    }
 
-    // The 7z archive extracts to `macos-arm64/`. Rename it to the stable `voicevox_engine/` path.
+    // The archive extracts to `macos-arm64/`. Rename to the stable `voicevox_engine/` path.
     let extracted_candidate = std::path::Path::new(SIDECAR_DIR).join("macos-arm64");
     if extracted_candidate.exists() {
         std::fs::rename(&extracted_candidate, engine_dir)
             .map_err(|e| anyhow::anyhow!("failed to rename extracted directory: {e}"))?;
     }
 
-    // The 7z extraction strips execute bits — restore them on the main binary.
+    // Ensure the main binary is executable (archive may not preserve the bit).
     let run_bin = engine_dir.join("run");
     {
         use std::os::unix::fs::PermissionsExt;
@@ -246,7 +248,7 @@ async fn download_and_extract(
             .map_err(|e| anyhow::anyhow!("failed to chmod run binary: {e}"))?;
     }
 
-    let _ = std::fs::remove_file(&tmp_path);
+    let _ = tokio::fs::remove_file(&tmp_path).await;
 
     Ok(())
 }
