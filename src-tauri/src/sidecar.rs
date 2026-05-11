@@ -201,10 +201,8 @@ async fn download_and_extract(
     }).await
         .map_err(|e| anyhow::anyhow!("extraction task panicked: {e}"))??;
 
-    // The 7z archive extracts to a subdirectory. Rename it to the stable `voicevox_engine/` path.
-    // The exact extracted directory name depends on the archive internals — check after first run.
-    let extracted_candidate = std::path::Path::new(SIDECAR_DIR)
-        .join(format!("voicevox_engine-macos-arm64-{VOICEVOX_VERSION}"));
+    // The 7z archive extracts to `macos-arm64/`. Rename it to the stable `voicevox_engine/` path.
+    let extracted_candidate = std::path::Path::new(SIDECAR_DIR).join("macos-arm64");
     if extracted_candidate.exists() {
         std::fs::rename(&extracted_candidate, engine_dir)
             .map_err(|e| anyhow::anyhow!("failed to rename extracted directory: {e}"))?;
