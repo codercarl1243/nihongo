@@ -1,0 +1,29 @@
+@layer components {
+    .voicevox-status {
+        padding: var(--cc-spacing-sm) var(--cc-spacing-md);
+        border-radius: var(--cc-radius-md);
+        background: var(--cc-color-neutral-100, #f3f4f6);
+        width: 100%;
+    }
+
+    .voicevox-status__row {
+        font-size: var(--cc-font-size-sm, 0.875rem);
+        color: var(--cc-color-neutral-600, #4b5563);
+    }
+
+    .voicevox-status__label {
+        flex: 1;
+    }
+
+    .voicevox-status__label--error {
+        color: var(--cc-color-danger-600, #dc2626);
+    }
+
+    .voicevox-status__pct {
+        font-size: var(--cc-font-size-sm, 0.875rem);
+        color: var(--cc-color-neutral-500, #6b7280);
+        font-variant-numeric: tabular-nums;
+        min-width: 3ch;
+        text-align: right;
+    }
+}

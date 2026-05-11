@@ -3,6 +3,15 @@ import type { Variant } from '../design-system/types/variant';
 
 export type SessionStatus = 'warming_up' | 'idle' | 'starting' | 'ready';
 
+export type VoiceVoxState =
+    | 'pending'     // before first event received
+    | 'checking'
+    | 'downloading'
+    | 'extracting'
+    | 'starting'
+    | 'ready'
+    | 'error';
+
 export type Toast = {
     id: string;
     variant: Variant;
@@ -18,6 +27,9 @@ export type Message = {
 
 type AppState = {
     sessionStatus: SessionStatus;
+    voicevoxState: VoiceVoxState;
+    voicevoxProgress: number;      // 0–100, meaningful during 'downloading'
+    voicevoxMessage: string | null;
     messages: Message[];
     streamingText: string;
     promptTokens: number;
@@ -27,6 +39,7 @@ type AppState = {
     toasts: Toast[];
 
     setSessionStatus: (status: SessionStatus) => void;
+    setVoicevoxStatus: (payload: { state: string; progress?: number | null; message?: string | null }) => void;
     addMessage: (sender: 'user' | 'tutor' | 'system', text: string) => void;
     appendToken: (token: string) => void;
     finalizeStream: (fullText: string) => void;
@@ -40,6 +53,9 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set) => ({
     sessionStatus: 'warming_up',
+    voicevoxState: 'pending',
+    voicevoxProgress: 0,
+    voicevoxMessage: null,
     messages: [],
     streamingText: '',
     promptTokens: 0,
@@ -49,6 +65,13 @@ export const useAppStore = create<AppState>((set) => ({
     toasts: [],
 
     setSessionStatus: (sessionStatus) => set({ sessionStatus }),
+
+    setVoicevoxStatus: ({ state, progress, message }) =>
+        set({
+            voicevoxState:    state as VoiceVoxState,
+            voicevoxProgress: progress != null ? Math.round(progress * 100) : 0,
+            voicevoxMessage:  message ?? null,
+        }),
 
     addMessage: (sender, text) =>
         set((s) => ({

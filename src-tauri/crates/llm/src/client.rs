@@ -162,26 +162,6 @@ impl SidecarClient {
         Ok(stream)
     }
 
-    /// Send text to the TTS endpoint, receive WAV bytes back.
-    pub async fn speak(&self, text: &str) -> Result<Vec<u8>> {
-        #[derive(Serialize)]
-        struct Req<'a> { text: &'a str }
-
-        let bytes = self.http
-            .post(format!("{}/tts/speak", self.base))
-            .json(&Req { text })
-            .send()
-            .await
-            .context("TTS request failed")?
-            .error_for_status()
-            .context("TTS returned error status")?
-            .bytes()
-            .await
-            .context("failed to read TTS audio")?;
-
-        Ok(bytes.to_vec())
-    }
-
     /// Ask the LLM to classify whether the turn was a milestone (student answered
     /// correctly) or a correction (student made an error).
     ///

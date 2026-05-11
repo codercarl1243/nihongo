@@ -65,3 +65,4 @@ serde_json   = { workspace = true }
 reqwest      = { workspace = true }
 dirs         = "6"
 chrono       = "0.4"
+sevenz-rust2 = "0.21"
