@@ -208,6 +208,17 @@ async fn download_and_extract(
             .map_err(|e| anyhow::anyhow!("failed to rename extracted directory: {e}"))?;
     }
 
+    // The 7z extraction strips execute bits — restore them on the main binary.
+    let run_bin = engine_dir.join("run");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&run_bin)
+            .map_err(|e| anyhow::anyhow!("failed to read run binary metadata: {e}"))?.permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&run_bin, perms)
+            .map_err(|e| anyhow::anyhow!("failed to chmod run binary: {e}"))?;
+    }
+
     let _ = std::fs::remove_file(&tmp_path);
 
     Ok(())
