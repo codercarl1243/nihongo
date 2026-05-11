@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 use audio_engine::AudioPlayer;
 use llm::SidecarClient;
+use nihongo_lib::tts::{VoiceVoxClient, DEFAULT_SPEAKER};
 
 /// The sentences that make up a realistic N3-level tutor response.
 /// Four sentences so the sequential-vs-parallel comparison is meaningful.
@@ -42,6 +43,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let llm = SidecarClient::new();
+    let tts = VoiceVoxClient::new(DEFAULT_SPEAKER);
 
     // ── 1. Sidecar health ────────────────────────────────────────────────────
     step("Waiting for sidecar");
@@ -54,7 +56,7 @@ async fn main() -> anyhow::Result<()> {
     let mut seq_wavs: Vec<Vec<u8>> = Vec::new();
     for (i, sentence) in SENTENCES.iter().enumerate() {
         let t = Instant::now();
-        let wav = llm.speak(sentence).await?;
+        let wav = tts.speak(sentence).await?;
         println!("  sentence {}: {:>5} bytes  ({:.0}ms)", i + 1, wav.len(), t.elapsed().as_millis());
         seq_wavs.push(wav);
     }
@@ -70,12 +72,12 @@ async fn main() -> anyhow::Result<()> {
         tokio::sync::mpsc::channel::<tokio::task::JoinHandle<anyhow::Result<Vec<u8>>>>(8);
 
     // Dispatcher: fires all TTS tasks immediately.
-    let llm_d = llm.clone();
+    let tts_d = tts.clone();
     let sentences: Vec<String> = SENTENCES.iter().map(|s| s.to_string()).collect();
     let dispatcher = tokio::spawn(async move {
         for sentence in sentences {
-            let llm = llm_d.clone();
-            let handle = tokio::spawn(async move { llm.speak(&sentence).await });
+            let tts = tts_d.clone();
+            let handle = tokio::spawn(async move { tts.speak(&sentence).await });
             if wav_handle_tx.send(handle).await.is_err() { break; }
         }
     });

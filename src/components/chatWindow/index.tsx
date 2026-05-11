@@ -2,19 +2,23 @@ import { Stack } from '../../design-system/primitives';
 import { useAppStore } from '../../lib/store';
 import useChat from './useChat';
 import SessionButton from '../audioButton';
+import VoicevoxStatus from '../voicevoxStatus';
 import PipelineFlow from '../pipelineFlow'; // [PIPELINE_DEBUG]
 import ChatMessage from './chatMessage';
 import TokenCount from './tokenCount';
 
 export default function ChatWindow() {
     const { sessionStatus, messages, streamingText, scrollRef, start, stop } = useChat();
-    const micActive     = useAppStore((s) => s.micActive);
-    const isThinking    = useAppStore((s) => s.isThinking);
-    const pipelineStage = useAppStore((s) => s.pipelineStage); // [PIPELINE_DEBUG]
+    const micActive      = useAppStore((s) => s.micActive);
+    const isThinking     = useAppStore((s) => s.isThinking);
+    const voicevoxState  = useAppStore((s) => s.voicevoxState);
+    const pipelineStage  = useAppStore((s) => s.pipelineStage); // [PIPELINE_DEBUG]
+
+    const voicevoxReady = voicevoxState === 'ready';
 
     return (
-        <Stack 
-        gap="lg" 
+        <Stack
+        gap="lg"
         className="chat-window pt-md surface-frame my-lg"
         variant='inverse'
         variantAppearance='filled'
@@ -50,7 +54,14 @@ export default function ChatWindow() {
                 <PipelineFlow stage={pipelineStage} /> // [PIPELINE_DEBUG]
             )}
 
-            <SessionButton status={sessionStatus} onStart={start} onStop={stop} />
+            <VoicevoxStatus />
+
+            <SessionButton
+                status={sessionStatus}
+                voicevoxReady={voicevoxReady}
+                onStart={start}
+                onStop={stop}
+            />
 
             {sessionStatus === 'ready' && <TokenCount />}
         </Stack>

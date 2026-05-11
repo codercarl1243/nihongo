@@ -5,16 +5,21 @@ import type { SessionStatus } from '../../lib/store';
 
 type Props = {
     status: SessionStatus;
+    voicevoxReady: boolean;
     onStart: () => Promise<void>;
     onStop: () => Promise<void>;
 };
 
-export default function SessionButton({ status, onStart, onStop }: Props) {
+export default function SessionButton({ status, voicevoxReady, onStart, onStop }: Props) {
     if (status === 'warming_up') {
         return <Button isLoading>Warming Up…</Button>;
     }
 
     if (status === 'idle') {
+        // Block session start until TTS engine is ready — first-run download may still be in progress.
+        if (!voicevoxReady) {
+            return <Button isLoading>Setting Up TTS…</Button>;
+        }
         return <Button onClick={onStart}>Start Session</Button>;
     }
 

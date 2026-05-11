@@ -30,12 +30,14 @@ use tokio_stream::StreamExt;
 use audio_engine::AudioPlayer;
 use db::Db;
 use llm::SidecarClient;
+use nihongo_lib::tts::{VoiceVoxClient, DEFAULT_SPEAKER};
 use tutor::{Japanese, parse_response_pub, TutorSession};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let llm = SidecarClient::new();
+    let tts = VoiceVoxClient::new(DEFAULT_SPEAKER);
     let mut failures = 0;
 
     // ── 1. Sidecar health ────────────────────────────────────────────────────
@@ -118,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
 
     // ── 5. TTS speak → WAV ───────────────────────────────────────────────────
     step(5, 6, "TTS speak → WAV");
-    let wav = match llm.speak(&tts_input).await {
+    let wav = match tts.speak(&tts_input).await {
         Ok(wav) if wav.len() >= 44 => {
             pass(Some(format!("{} bytes", wav.len())));
             wav

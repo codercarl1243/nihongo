@@ -32,11 +32,13 @@ use tokio_stream::StreamExt;
 
 use db::{LearnerProfile, SessionContext};
 use llm::{SidecarClient, StreamItem};
+use nihongo_lib::tts::{VoiceVoxClient, DEFAULT_SPEAKER};
 use tutor::{build_system_prompt_pub, Japanese};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let llm = SidecarClient::new();
+    let tts = VoiceVoxClient::new(DEFAULT_SPEAKER);
     let mut failures = 0;
 
     // ── 1. Health ────────────────────────────────────────────────────────────
@@ -48,7 +50,7 @@ async fn main() -> anyhow::Result<()> {
     step(2, 6, "ASR round-trip  (TTS → resample 24k→16k → ASR)");
 
     let phrase = "こんにちは";
-    let wav = llm.speak(phrase).await?;
+    let wav = tts.speak(phrase).await?;
     let pcm_24k = wav_to_f32(&wav)?;
     let pcm_16k = resample(&pcm_24k, 24_000, 16_000);
     let transcript = llm.transcribe(&pcm_16k, None).await?;
@@ -72,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     step(3, 6, "Echo strip — TTS audio detectable by ASR (validates 400ms tail)");
 
     let echo_phrase = "おはようございます";
-    let echo_wav = llm.speak(echo_phrase).await?;
+    let echo_wav = tts.speak(echo_phrase).await?;
     let echo_pcm_16k = resample(&wav_to_f32(&echo_wav)?, 24_000, 16_000);
     let echo_transcript = llm.transcribe(&echo_pcm_16k, None).await?;
 
