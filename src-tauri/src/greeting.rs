@@ -25,17 +25,13 @@ pub async fn send_greeting(app: AppHandle) -> anyhow::Result<()> {
     let greeting = build_greeting();
 
     app.emit("pipeline_status", PipelineStatusEvent { stage: "TTS: Synthesizing".into() }).ok(); // [PIPELINE_DEBUG]
-    // Mute is deferred until synthesis completes — VoiceVox synthesizes over
-    // HTTP (1–3 s) and we don't want the mic silenced during that window.
+    state.audio.lock().unwrap().mute();
     state.player.lock().unwrap().resume();
 
     let tts_result = async {
         let wav = state.tts.speak(greeting).await?;
         let pcm = crate::pipeline::wav_to_f32(&wav)?;
         let len = pcm.len();
-        // Mute immediately before the first audio chunk hits the speaker,
-        // not before synthesis, so the mic stays live during synthesis latency.
-        state.audio.lock().unwrap().mute();
         state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
         if let Some(ref sink) = *state.aec_sink.lock().unwrap() {
             sink.push(&pcm, 24_000);

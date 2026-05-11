@@ -110,9 +110,7 @@ pub async fn handle_turn(
         while let Some(handle) = wav_handle_rx.recv().await {
             if !tts_started {
                 app.emit("pipeline_status", PipelineStatusEvent { stage: "TTS: Synthesizing".into() }).ok(); // [PIPELINE_DEBUG]
-                // resume() here so the player is ready; mute() is deferred
-                // until the WAV is in hand (below) — keeps the mic live during
-                // synthesis latency so the user can barge in or speak freely.
+                state.audio.lock().unwrap().mute();
                 state.player.lock().unwrap().resume();
                 tts_started = true;
             }
@@ -126,11 +124,6 @@ pub async fn handle_turn(
             }
             let wav = handle.await.map_err(|e| anyhow::anyhow!("TTS task panicked: {e}"))??;
             let pcm = wav_to_f32(&wav)?;
-            // Mute immediately before the first chunk hits the speaker so the
-            // mic is only silenced during actual playback, not synthesis.
-            if total_samples == 0 {
-                state.audio.lock().unwrap().mute();
-            }
             total_samples += pcm.len();
             state.player.lock().unwrap().play_chunk(&pcm, 24_000)?;
             if let Some(ref sink) = *state.aec_sink.lock().unwrap() {
@@ -325,14 +318,32 @@ pub async fn compact_context(app: &AppHandle, llm: &SidecarClient) -> anyhow::Re
 // ---------------------------------------------------------------------------
 
 pub fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
-    if wav.len() < 44 {
-        anyhow::bail!("WAV payload too short");
-    }
-    let samples = wav[44..]
+    let offset = find_wav_data_offset(wav)?;
+    let samples = wav[offset..]
         .chunks_exact(2)
         .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / i16::MAX as f32)
         .collect();
     Ok(samples)
+}
+
+/// Scan RIFF chunks to find the byte offset of the first `data` chunk payload.
+/// This handles WAV files with extra chunks (e.g. VoiceVox's `fact` chunk)
+/// between `fmt` and `data` that would otherwise be mis-parsed as audio.
+fn find_wav_data_offset(wav: &[u8]) -> anyhow::Result<usize> {
+    if wav.len() < 12 {
+        anyhow::bail!("WAV payload too short");
+    }
+    let mut pos = 12; // skip the 12-byte RIFF/WAVE header
+    while pos + 8 <= wav.len() {
+        let id   = &wav[pos..pos + 4];
+        let size = u32::from_le_bytes(wav[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        if id == b"data" {
+            return Ok(pos + 8);
+        }
+        // Chunks are word-aligned; skip id (4) + size field (4) + payload (size, rounded up)
+        pos += 8 + size + (size & 1);
+    }
+    anyhow::bail!("no data chunk found in WAV");
 }
 
 // ---------------------------------------------------------------------------
