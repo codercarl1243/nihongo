@@ -693,6 +693,523 @@ Add `generate_shadow_script(topic: &str, level: u8) -> Vec<String>` Tauri comman
 
 ---
 
+## Phase 10 — Frontend App Shell
+
+> **Why:** The app is a single `ChatWindow` with no navigation, no session history, and no settings. All the data exists in SQLite (sessions, learner profile, lesson summaries) but there are no Tauri commands to read it and no UI to show it. This phase adds the app shell, wires the history list, and exposes the settings surface.
+>
+> **Order of implementation:** 10a (backend commands) → 10e (store changes) → 10b (AppLayout + Sidebar) → 10c (Settings) → 10d (Session replay) → 10f (quick wins).
+
+---
+
+### 10a. New Tauri commands
+
+**File:** `src-tauri/src/commands.rs` — add the commands below and register them in `src-tauri/src/lib.rs` (`.invoke_handler(tauri::generate_handler![..., get_sessions, ...])`).
+
+**Types file:** `src-tauri/src/commands.rs` (or a new `src-tauri/src/types.rs` if it grows large). All returned types must derive `serde::Serialize`.
+
+```rust
+// ── Types ──────────────────────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+pub struct SessionRecord {
+    pub id: i64,
+    pub started_at: String,       // ISO-8601, from sessions.started_at
+    pub ended_at: Option<String>, // None if session is still active
+    pub turn_count: i64,          // COUNT(*) from conversation_turns WHERE session_id = id
+    pub summary_notes: Option<String>, // from lesson_summaries.notes WHERE session_id = id (latest)
+}
+
+#[derive(serde::Serialize)]
+pub struct TurnRecord {
+    pub id: i64,
+    pub role: String,      // "user" | "assistant"
+    pub content: String,
+    pub created_at: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct AppSettings {
+    pub tts_engine: String,        // "voicevox" | "qwen3"
+    pub voicevox_speaker: u32,     // DEFAULT_SPEAKER value
+    pub silence_preset: String,    // "beginner" | "normal" | "fast"
+                                   // maps to lang.silence_threshold_ms(level)
+}
+
+// ── Commands ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_sessions(state: State<'_, AppState>) -> Result<Vec<SessionRecord>, String> {
+    // db.list_sessions() — new Db method (see below)
+    state.db.lock().unwrap().list_sessions().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_session_turns(id: i64, state: State<'_, AppState>) -> Result<Vec<TurnRecord>, String> {
+    // db.get_turns(id) — new Db method (see below)
+    state.db.lock().unwrap().get_turns(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_learner_profile(state: State<'_, AppState>) -> Result<LearnerProfile, String> {
+    // db.learner_profile() already exists in store.rs:280
+    // LearnerProfile must also derive Serialize (add derive if not present)
+    state.db.lock().unwrap().learner_profile().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn update_learner_profile(
+    current_level: u8,
+    target_level: u8,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // db.set_learner_profile(current_level, target_level) — new Db method
+    state.db.lock().unwrap()
+        .set_learner_profile(current_level, target_level)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, String> {
+    // db.load_app_settings() — new Db method reading from app_settings table
+    state.db.lock().unwrap().load_app_settings().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_settings(settings: AppSettings, state: State<'_, AppState>) -> Result<(), String> {
+    // db.save_app_settings(&settings) — new Db method upserting into app_settings table
+    state.db.lock().unwrap().save_app_settings(&settings).map_err(|e| e.to_string())
+}
+```
+
+**New `Db` methods** (`src-tauri/crates/db/src/store.rs`):
+
+```rust
+pub fn list_sessions(&self) -> Result<Vec<SessionRecord>> {
+    // SELECT s.id, s.started_at, s.ended_at,
+    //        COUNT(t.id) AS turn_count,
+    //        ls.notes    AS summary_notes
+    // FROM sessions s
+    // LEFT JOIN conversation_turns t ON t.session_id = s.id
+    // LEFT JOIN lesson_summaries ls  ON ls.session_id = s.id
+    // GROUP BY s.id
+    // ORDER BY s.started_at DESC
+}
+
+pub fn get_turns(&self, session_id: i64) -> Result<Vec<TurnRecord>> {
+    // SELECT id, role, content, created_at
+    // FROM conversation_turns
+    // WHERE session_id = ?1
+    // ORDER BY id ASC
+}
+
+pub fn set_learner_profile(&self, current_level: u8, target_level: u8) -> Result<()> {
+    // UPDATE learner_profile SET current_level = ?1, target_level = ?2
+    // (table has a single row; learner_profile() at line 280 reads it)
+}
+
+pub fn load_app_settings(&self) -> Result<AppSettings> {
+    // SELECT value FROM app_settings WHERE key = 'tts_engine' | 'voicevox_speaker' | ...
+    // If the table/rows don't exist yet, return AppSettings defaults:
+    //   tts_engine: "voicevox", voicevox_speaker: DEFAULT_SPEAKER, silence_preset: "normal"
+    //
+    // New table in migration (add to migrate_to_v* in store.rs):
+    // CREATE TABLE IF NOT EXISTS app_settings (
+    //     key   TEXT PRIMARY KEY,
+    //     value TEXT NOT NULL
+    // );
+}
+
+pub fn save_app_settings(&self, s: &AppSettings) -> Result<()> {
+    // INSERT OR REPLACE INTO app_settings (key, value) VALUES
+    //   ('tts_engine',       ?1),
+    //   ('voicevox_speaker', ?2),
+    //   ('silence_preset',   ?3)
+}
+```
+
+**Frontend API** (`src/lib/api.ts`):
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+
+export type SessionRecord = {
+    id: number;
+    startedAt: string;
+    endedAt: string | null;
+    turnCount: number;
+    summaryNotes: string | null;
+};
+
+export type TurnRecord = {
+    id: number;
+    role: 'user' | 'assistant';
+    content: string;
+    createdAt: string;
+};
+
+export type LearnerProfile = {
+    currentLevel: number;  // 1–5 (N1–N5)
+    targetLevel: number;
+};
+
+export type AppSettings = {
+    ttsEngine: 'voicevox' | 'qwen3';
+    voicevoxSpeaker: number;
+    silencePreset: 'beginner' | 'normal' | 'fast';
+};
+
+export async function getSessions(): Promise<SessionRecord[]> {
+    return invoke('get_sessions');
+}
+
+export async function getSessionTurns(id: number): Promise<TurnRecord[]> {
+    return invoke('get_session_turns', { id });
+}
+
+export async function getLearnerProfile(): Promise<LearnerProfile> {
+    return invoke('get_learner_profile');
+}
+
+export async function updateLearnerProfile(
+    currentLevel: number,
+    targetLevel: number,
+): Promise<void> {
+    return invoke('update_learner_profile', { currentLevel, targetLevel });
+}
+
+export async function getSettings(): Promise<AppSettings> {
+    return invoke('get_settings');
+}
+
+export async function saveSettings(settings: AppSettings): Promise<void> {
+    return invoke('save_settings', { settings });
+}
+```
+
+---
+
+### 10b. AppLayout + Sidebar
+
+**New files:**
+- `src/components/appLayout/index.tsx`
+- `src/components/appLayout/appLayout.css`
+- `src/components/sidebar/index.tsx`
+- `src/components/sidebar/sidebar.css`
+- `src/components/sessionItem/index.tsx`
+- `src/components/sessionItem/sessionItem.css`
+
+**`App.tsx` after refactor:**
+
+```tsx
+// src/App.tsx
+import "./styles/global.css";
+import AppLayout from "./components/appLayout";
+import ToastContainer from "./components/toast";
+
+function App() {
+  return (
+    <>
+      <AppLayout />
+      <ToastContainer />
+    </>
+  );
+}
+```
+
+**`AppLayout`** — controls which main panel is visible:
+
+```tsx
+// src/components/appLayout/index.tsx
+// Layout: CSS grid, two columns — sidebar (240px fixed) + main (1fr)
+// State: view = 'chat' | 'settings' | 'session-detail'
+//        selectedSessionId: number | null  (from store)
+//
+// Renders:
+//   <Sidebar onNewSession onSelectSession onOpenSettings />
+//   {view === 'chat'           && <ChatWindow />}
+//   {view === 'settings'       && <SettingsPage />}
+//   {view === 'session-detail' && <SessionDetail sessionId={selectedSessionId} />}
+//
+// CSS grid:
+//   .app-layout { display: grid; grid-template-columns: 240px 1fr; height: 100vh; }
+//   .app-layout__sidebar { border-right: 1px solid var(--cc-border); overflow-y: auto; }
+//   .app-layout__main { display: flex; flex-direction: column; overflow: hidden; }
+```
+
+**`Sidebar`**:
+
+```tsx
+// src/components/sidebar/index.tsx
+// On mount: call getSessions() and populate store (sessions[])
+// Re-fetch after each session ends (listen for sessionStatus === 'idle' changing from 'ready')
+//
+// Layout (top to bottom):
+//   <button> New Session   ← disabled when sessionStatus !== 'idle'
+//   <button> Settings      ← icon + label
+//   <hr />
+//   <ul> {sessions.map(s => <SessionItem key={s.id} session={s} ... />)}
+//   {sessions.length === 0 && <p className="sidebar__empty">No sessions yet</p>}
+//
+// Props:
+//   onNewSession: () => void       — clears messages, calls startSession()
+//   onSelectSession: (id) => void  — sets selectedSessionId in store, switches view to 'session-detail'
+//   onOpenSettings: () => void     — switches view to 'settings'
+```
+
+**`SessionItem`**:
+
+```tsx
+// src/components/sessionItem/index.tsx
+// Props: session: SessionRecord, isSelected: boolean, onClick: () => void
+//
+// Renders:
+//   <li role="button" aria-selected={isSelected} onClick={onClick}>
+//     <span className="session-item__date">
+//       {formatDate(session.startedAt)}   // e.g. "May 12" or "Yesterday"
+//     </span>
+//     <span className="session-item__meta">
+//       {session.turnCount} turns
+//       {duration && ` · ${duration}`}    // derived: endedAt - startedAt, formatted as "4m"
+//     </span>
+//     {session.summaryNotes && (
+//       <p className="session-item__preview">
+//         {session.summaryNotes.slice(0, 80)}…
+//       </p>
+//     )}
+//   </li>
+//
+// duration helper:
+//   function sessionDuration(s: SessionRecord): string | null {
+//     if (!s.endedAt) return null;
+//     const ms = Date.parse(s.endedAt) - Date.parse(s.startedAt);
+//     const mins = Math.round(ms / 60_000);
+//     return mins < 1 ? '<1m' : `${mins}m`;
+//   }
+```
+
+---
+
+### 10c. Settings page
+
+**New files:**
+- `src/components/settingsPage/index.tsx`
+- `src/components/settingsPage/settingsPage.css`
+
+```tsx
+// src/components/settingsPage/index.tsx
+//
+// On mount:
+//   const [profile, setProfile] = useState<LearnerProfile | null>(null);
+//   const [settings, setSettings] = useState<AppSettings | null>(null);
+//   useEffect(() => { getLearnerProfile().then(setProfile); getSettings().then(setSettings); }, []);
+//
+// Layout — use <Stack gap="lg">:
+//
+//   Section: "Your Level"
+//     <label>Current Level</label>
+//     <select value={profile.currentLevel} onChange={...}>
+//       {[5,4,3,2,1].map(n => <option value={n}>N{n}</option>)}
+//     </select>
+//     <label>Target Level</label>
+//     <select value={profile.targetLevel} onChange={...}>
+//       {[5,4,3,2,1].map(n => <option value={n}>N{n}</option>)}
+//     </select>
+//
+//   Section: "Speech"
+//     <label>Silence detection</label>
+//     <select value={settings.silencePreset} onChange={...}>
+//       <option value="beginner">Beginner (1 200 ms)</option>
+//       <option value="normal">Normal (900 ms)</option>
+//       <option value="fast">Fast (700 ms)</option>
+//     </select>
+//     Note: the actual ms value is derived server-side from lang.silence_threshold_ms(level).
+//     The preset maps: beginner → level 5, normal → level 3, fast → level 1.
+//
+//   Section: "Text-to-Speech"
+//     <label>Engine</label>
+//     <select value={settings.ttsEngine} onChange={...}>
+//       <option value="voicevox">VoiceVox (local, Japanese-optimised)</option>
+//       <option value="qwen3">Qwen3 TTS (local, multilingual)</option>
+//     </select>
+//     {settings.ttsEngine === 'voicevox' && (
+//       <label>VoiceVox Speaker ID</label>
+//       <input type="number" value={settings.voicevoxSpeaker} min={0} max={99} onChange={...} />
+//     )}
+//
+//   <Button onClick={handleSave}>Save</Button>
+//
+// handleSave:
+//   await updateLearnerProfile(profile.currentLevel, profile.targetLevel);
+//   await saveSettings(settings);
+//   store.addToast({ variant: 'success', message: 'Settings saved' });
+```
+
+---
+
+### 10d. Session replay view
+
+**New files:**
+- `src/components/sessionDetail/index.tsx`
+- `src/components/sessionDetail/sessionDetail.css`
+
+```tsx
+// src/components/sessionDetail/index.tsx
+//
+// Props: sessionId: number
+//
+// On mount / when sessionId changes:
+//   const [turns, setTurns] = useState<TurnRecord[]>([]);
+//   useEffect(() => { getSessionTurns(sessionId).then(setTurns); }, [sessionId]);
+//
+// Layout:
+//   <div className="session-detail">
+//     <header className="session-detail__header">
+//       <button onClick={onBack}>← Back</button>
+//       <span>{formatDate(session.startedAt)}</span>  // pass SessionRecord as prop too
+//       {session.summaryNotes && <p className="session-detail__summary">{session.summaryNotes}</p>}
+//     </header>
+//     <ol className="session-detail__turns">
+//       {turns.map(t => (
+//         <li key={t.id} data-role={t.role}>
+//           <span className="turn__role">{t.role === 'user' ? 'You' : 'Tutor'}</span>
+//           <p className="turn__content">{t.content}</p>
+//           <time className="turn__time">{formatTime(t.createdAt)}</time>
+//         </li>
+//       ))}
+//     </ol>
+//   </div>
+//
+// CSS mirrors chatWindow.css message bubbles — use data-role="user"|"assistant"
+// for alignment (user = right, assistant = left).
+//
+// If turns.length === 0 && not loading: show <EmptyState message="No turns recorded" />
+```
+
+---
+
+### 10e. Store changes
+
+**File:** `src/lib/store.ts`
+
+```typescript
+// Add to Message type:
+export type Message = {
+    id: string;
+    sender: 'user' | 'tutor' | 'system';
+    text: string;
+    createdAt: string;   // ISO-8601, set to new Date().toISOString() in addMessage
+};
+
+// Add to AppState type:
+type AppState = {
+    // ... all existing fields unchanged ...
+
+    // Session history
+    sessions: SessionRecord[];
+    selectedSessionId: number | null;
+
+    // Settings (loaded on app start)
+    settings: AppSettings | null;
+
+    // New actions
+    setSessions: (sessions: SessionRecord[]) => void;
+    selectSession: (id: number | null) => void;
+    clearMessages: () => void;
+    setSettings: (s: AppSettings) => void;
+};
+
+// Add to create<AppState>((set) => ({ ... })):
+sessions: [],
+selectedSessionId: null,
+settings: null,
+
+setSessions: (sessions) => set({ sessions }),
+selectSession: (selectedSessionId) => set({ selectedSessionId }),
+clearMessages: () => set({ messages: [], streamingText: '' }),
+setSettings: (settings) => set({ settings }),
+
+// Update addMessage to include createdAt:
+addMessage: (sender, text) =>
+    set((s) => ({
+        messages: [
+            ...s.messages,
+            { id: crypto.randomUUID(), sender, text, createdAt: new Date().toISOString() },
+        ],
+    })),
+```
+
+---
+
+### 10f. Quick wins
+
+**Remove `[PIPELINE_DEBUG]` code:**
+
+Files to edit:
+- `src/lib/store.ts` — delete `pipelineStage` field, `setPipelineStage` action
+- `src/components/pipelineFlow/index.tsx` — delete the file
+- `src/App.tsx` / `ChatWindow` — remove `<PipelineFlow />` import and usage
+- `src-tauri/src/commands.rs` — remove `vad_stream` spawn block and `PipelineStatusEvent` emit (marked `// [PIPELINE_DEBUG]`)
+- `src-tauri/src/events.rs` — remove `PipelineStatusEvent` struct if unused elsewhere
+- `src/lib/useEvents.ts` — remove `pipeline_status` listener
+
+**EmptyState component:**
+
+```tsx
+// src/components/emptyState/index.tsx
+// Props: message?: string
+//
+// <div className="empty-state">
+//   <p>{message ?? 'Start a session to begin'}</p>
+// </div>
+//
+// Show inside ChatWindow when messages.length === 0 && sessionStatus === 'idle'
+```
+
+**Load sessions on app start:**
+
+```tsx
+// src/App.tsx (or AppLayout useEffect)
+useEffect(() => {
+    getSessions().then(store.setSessions);
+    getSettings().then(store.setSettings);
+}, []);
+```
+
+**Refetch sessions after session ends:**
+
+```tsx
+// In the existing sessionStatus listener (useEvents.ts or ChatWindow):
+// When sessionStatus transitions to 'idle', call getSessions().then(store.setSessions)
+// This ensures the just-ended session appears in the history list.
+```
+
+---
+
+### Phase 10 verification
+
+```bash
+# Rust: new DB methods + commands compile
+cargo build --manifest-path src-tauri/Cargo.toml
+
+# DB: app_settings table created, list_sessions returns rows
+cargo test --package db
+
+# Frontend: TypeScript strict + no unused locals
+pnpm build   # tsc + vite — must produce zero type errors
+
+# Manual checklist:
+# 1. pnpm tauri dev
+# 2. Sidebar renders with "No sessions yet" empty state
+# 3. Click "New Session" → session starts, messages accumulate
+# 4. Click "End Session" → session appears in sidebar history
+# 5. Click a session item → SessionDetail shows all turns
+# 6. Click "Settings" → form loads current JLPT level and TTS prefs
+# 7. Change level + Save → toast "Settings saved", profile persists on restart
+# 8. PipelineFlow is gone — no debug panel visible anywhere
+```
+
+---
+
 ## Stretch Goals
 
 > Not scheduled. Revisit after user testing and any B2B conversations have shaped the real requirements.
@@ -763,6 +1280,11 @@ cargo test --package tutor   # extract_journal_words JSON parsing + json_parser 
 # Phase 9
 cargo test --package db      # shadow tables created
 cargo test --package tutor   # similarity() edge cases
+
+# Phase 10
+cargo build --manifest-path src-tauri/Cargo.toml   # new commands compile
+cargo test --package db                             # app_settings table + list_sessions
+pnpm build                                          # zero TypeScript errors
 
 # Full regression
 cargo test
