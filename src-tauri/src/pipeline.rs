@@ -147,7 +147,14 @@ pub async fn handle_turn(
 
     tts_result?;
 
-    let (full_text, usage) = llm_task.await??;
+    // Guard: if the LLM task fails after TTS has already started, the normal
+    // unmute path (below) is never reached — leaving the mic permanently muted.
+    let llm_join = llm_task.await;
+    if llm_join.as_ref().map(|r| r.is_err()).unwrap_or(true) && tts_started {
+        state.audio.lock().unwrap().unmute();
+        app.emit("mic_status", MicStatusEvent { active: true }).ok();
+    }
+    let (full_text, usage) = llm_join??;
 
     // Emit response immediately so text appears while audio is still playing.
     // milestone is false here — classification is not yet complete (runs in parallel).
