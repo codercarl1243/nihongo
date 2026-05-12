@@ -108,5 +108,7 @@ pub fn barge_in(state: State<'_, AppState>) {
 #[tauri::command]
 pub fn get_sidecar_ready(state: State<'_, AppState>) -> bool {
     use std::sync::atomic::Ordering;
-    state.sidecar_ready.load(Ordering::SeqCst)
+    let sidecar_ready  = state.sidecar_ready.load(Ordering::SeqCst);
+    let voicevox_ready = state.voicevox_ready.load(Ordering::SeqCst);
+    sidecar_ready && state.tts.is_ready(sidecar_ready, voicevox_ready)
 }
