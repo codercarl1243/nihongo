@@ -140,6 +140,8 @@ async fn run_voicevox_background(app: &AppHandle) -> anyhow::Result<()> {
 
     // Already running (e.g. leftover from previous launch).
     if voicevox_is_up().await {
+        use std::sync::atomic::Ordering;
+        app.state::<AppState>().voicevox_ready.store(true, Ordering::SeqCst);
         emit("ready", None, None);
         return Ok(());
     }
@@ -166,6 +168,8 @@ async fn run_voicevox_background(app: &AppHandle) -> anyhow::Result<()> {
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
         if voicevox_is_up().await {
+            use std::sync::atomic::Ordering;
+            app.state::<AppState>().voicevox_ready.store(true, Ordering::SeqCst);
             emit("ready", None, None);
             return Ok(());
         }

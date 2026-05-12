@@ -1,27 +1,30 @@
 /// Backend integration test — runs without the Tauri app.
 ///
-/// Requires the Python sidecar running on localhost:8091.
-/// Start it with:  cd sidecar && bash start.sh
-///   or:           pnpm test:integration   (starts sidecar automatically)
+/// Requires the Python sidecar running on localhost:8091 AND VoiceVox Engine on localhost:50021.
+/// Start them with:  cd sidecar && bash start.sh   (sidecar)
+///                   sidecar/voicevox_engine/run    (VoiceVox)
+///   or:             pnpm test:integration           (starts both automatically)
 ///
 /// Expected output:
 ///
-///   [1/6] Sidecar health … PASS
-///   [2/6] Database — open, start session, record turn, end session … PASS  (session_id=1)
-///   [3/6] TutorSession + system prompt … PASS  (2 messages in context)
-///   [4/6] LLM stream → parse TutorResponse … PASS  (response = "いい天気ですね…")
-///   [5/6] TTS speak → WAV … PASS  (12345 bytes)
-///   [6/6] AudioPlayer playback … PASS
+///   [1/7] Sidecar health … PASS
+///   [2/7] VoiceVox Engine health … PASS
+///   [3/7] Database — open, start session, record turn, end session … PASS  (session_id=1)
+///   [4/7] TutorSession + system prompt … PASS  (2 messages in context)
+///   [5/7] LLM stream → parse TutorResponse … PASS  (response = "いい天気ですね…")
+///   [6/7] TTS speak → WAV … PASS  (12345 bytes)
+///   [7/7] AudioPlayer playback … PASS
 ///
 ///   ✓ All tests passed.
 ///
 /// What each test checks:
-///   1. Health        — sidecar responds on localhost:8091
-///   2. DB            — Db::open, start_session, record_turn, end_session all succeed
-///   3. TutorSession  — builds a session from the live DB; system prompt renders without panic
-///   4. LLM           — full chat stream completes; parse_response produces a non-empty response
-///   5. TTS           — speak() returns WAV bytes; WAV header is valid (≥44 bytes)
-///   6. Playback      — AudioPlayer decodes and plays the TTS WAV without error
+///   1. Sidecar health   — sidecar responds on localhost:8091
+///   2. VoiceVox health  — VoiceVox Engine responds on localhost:50021
+///   3. DB               — Db::open, start_session, record_turn, end_session all succeed
+///   4. TutorSession     — builds a session from the live DB; system prompt renders without panic
+///   5. LLM              — full chat stream completes; parse_response produces a non-empty response
+///   6. TTS              — speak() returns WAV bytes; WAV chunk structure is valid
+///   7. Playback         — AudioPlayer decodes and plays the TTS WAV without error
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -41,14 +44,22 @@ async fn main() -> anyhow::Result<()> {
     let mut failures = 0;
 
     // ── 1. Sidecar health ────────────────────────────────────────────────────
-    step(1, 6, "Sidecar health");
+    step(1, 7, "Sidecar health");
     match llm.wait_until_ready(10).await {
         Ok(_) => pass(None),
         Err(e) => { fail(format!("{e}")); failures += 1; }
     }
 
-    // ── 2. Database ──────────────────────────────────────────────────────────
-    step(2, 6, "Database — open, start session, record turn, end session");
+    // ── 2. VoiceVox Engine health ─────────────────────────────────────────────
+    step(2, 7, "VoiceVox Engine health");
+    match reqwest::get("http://127.0.0.1:50021/version").await {
+        Ok(r) if r.status().is_success() => pass(None),
+        Ok(r) => { fail(format!("unexpected status {}", r.status())); failures += 1; }
+        Err(e) => { fail(format!("{e}")); failures += 1; }
+    }
+
+    // ── 3. Database ──────────────────────────────────────────────────────────
+    step(3, 7, "Database — open, start session, record turn, end session");
     let db_result = (|| -> anyhow::Result<Db> {
         let db = Db::open(&db_path())?;
         let session_id = db.start_session()?;
@@ -66,8 +77,8 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // ── 3. TutorSession + system prompt ──────────────────────────────────────
-    step(3, 6, "TutorSession + system prompt");
+    // ── 4. TutorSession + system prompt ──────────────────────────────────────
+    step(4, 7, "TutorSession + system prompt");
     let session_result = (|| -> anyhow::Result<TutorSession> {
         let mut session = TutorSession::new(&db, Arc::new(Japanese))?;
         session.push_user(&greeting());
@@ -81,8 +92,8 @@ async fn main() -> anyhow::Result<()> {
         Err(e) => { fail(format!("{e}")); failures += 1; return finish(failures); }
     };
 
-    // ── 4. LLM stream → parse TutorResponse ──────────────────────────────────
-    step(4, 6, "LLM stream → parse TutorResponse");
+    // ── 5. LLM stream → parse TutorResponse ──────────────────────────────────
+    step(5, 7, "LLM stream → parse TutorResponse");
     let messages = session.current_messages().to_vec();
     let llm_result = async {
         let mut full_text = String::new();
@@ -118,23 +129,22 @@ async fn main() -> anyhow::Result<()> {
     }
     db.end_session(session_id)?;
 
-    // ── 5. TTS speak → WAV ───────────────────────────────────────────────────
-    step(5, 6, "TTS speak → WAV");
+    // ── 6. TTS speak → WAV ───────────────────────────────────────────────────
+    step(6, 7, "TTS speak → WAV");
     let wav = match tts.speak(&tts_input).await {
-        Ok(wav) if wav.len() >= 44 => {
-            pass(Some(format!("{} bytes", wav.len())));
-            wav
-        }
-        Ok(wav) => {
-            fail(format!("WAV too short ({} bytes — missing header)", wav.len()));
-            failures += 1;
-            return finish(failures);
+        Ok(wav) => match find_wav_data_offset(&wav) {
+            Ok(_) => { pass(Some(format!("{} bytes", wav.len()))); wav }
+            Err(e) => {
+                fail(format!("invalid WAV structure: {e}"));
+                failures += 1;
+                return finish(failures);
+            }
         }
         Err(e) => { fail(format!("{e}")); failures += 1; return finish(failures); }
     };
 
-    // ── 6. AudioPlayer playback ───────────────────────────────────────────────
-    step(6, 6, "AudioPlayer playback");
+    // ── 7. AudioPlayer playback ───────────────────────────────────────────────
+    step(7, 7, "AudioPlayer playback");
     let pcm = wav_to_f32(&wav)?;
     let duration_secs = pcm.len() as f64 / 24_000.0;
     let play_result = (|| -> anyhow::Result<()> {
@@ -191,11 +201,33 @@ fn finish(failures: usize) -> anyhow::Result<()> {
 }
 
 fn wav_to_f32(wav: &[u8]) -> anyhow::Result<Vec<f32>> {
-    anyhow::ensure!(wav.len() >= 44, "WAV payload too short ({} bytes)", wav.len());
-    Ok(wav[44..]
+    let offset = find_wav_data_offset(wav)?;
+    Ok(wav[offset..]
         .chunks_exact(2)
         .map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / i16::MAX as f32)
         .collect())
+}
+
+/// Scan RIFF chunks to find the byte offset of the first `data` chunk payload.
+/// Handles WAV files with extra chunks (e.g. VoiceVox's `fact` chunk).
+fn find_wav_data_offset(wav: &[u8]) -> anyhow::Result<usize> {
+    if wav.len() < 12 {
+        anyhow::bail!("WAV payload too short ({} bytes)", wav.len());
+    }
+    let mut pos = 12;
+    while pos + 8 <= wav.len() {
+        let id   = &wav[pos..pos + 4];
+        let size = u32::from_le_bytes(wav[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        if id == b"data" {
+            return Ok(pos + 8);
+        }
+        let next_pos = pos + 8 + size + (size & 1);
+        if next_pos > wav.len() {
+            anyhow::bail!("chunk size {} would exceed WAV length", size);
+        }
+        pos = next_pos;
+    }
+    anyhow::bail!("no data chunk found in WAV");
 }
 
 fn greeting() -> String {

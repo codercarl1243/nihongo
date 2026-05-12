@@ -21,14 +21,15 @@ use tts::{TtsEngine, VoiceVoxClient, DEFAULT_SPEAKER};
 // ---------------------------------------------------------------------------
 
 pub struct AppState {
-    pub audio:         Mutex<AudioManager>,
-    pub player:        Mutex<AudioPlayer>,
-    pub aec_sink:      Mutex<Option<AecSink>>,
-    pub llm:           SidecarClient,
-    pub tts:           TtsEngine,
-    pub db:            Mutex<Db>,
-    pub session:       Mutex<Option<TutorSession>>,
-    pub sidecar_ready: AtomicBool,
+    pub audio:          Mutex<AudioManager>,
+    pub player:         Mutex<AudioPlayer>,
+    pub aec_sink:       Mutex<Option<AecSink>>,
+    pub llm:            SidecarClient,
+    pub tts:            TtsEngine,
+    pub db:             Mutex<Db>,
+    pub session:        Mutex<Option<TutorSession>>,
+    pub sidecar_ready:  AtomicBool,
+    pub voicevox_ready: AtomicBool,
 }
 
 // Compile-time path to the sidecar directory; resolves relative to src-tauri/.
@@ -45,14 +46,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState {
-            audio:         Mutex::new(AudioManager::new()),
-            player:        Mutex::new(AudioPlayer::new()),
-            aec_sink:      Mutex::new(None),
-            llm:           SidecarClient::new(),
-            tts:           TtsEngine::VoiceVox(VoiceVoxClient::new(DEFAULT_SPEAKER)),
-            db:            Mutex::new(db),
-            session:       Mutex::new(None),
-            sidecar_ready: AtomicBool::new(false),
+            audio:          Mutex::new(AudioManager::new()),
+            player:         Mutex::new(AudioPlayer::new()),
+            aec_sink:       Mutex::new(None),
+            llm:            SidecarClient::new(),
+            tts:            TtsEngine::VoiceVox(VoiceVoxClient::new(DEFAULT_SPEAKER)),
+            db:             Mutex::new(db),
+            session:        Mutex::new(None),
+            sidecar_ready:  AtomicBool::new(false),
+            voicevox_ready: AtomicBool::new(false),
         })
         .setup(|app| {
             let sidecar_handle  = app.handle().clone();

@@ -341,7 +341,11 @@ fn find_wav_data_offset(wav: &[u8]) -> anyhow::Result<usize> {
             return Ok(pos + 8);
         }
         // Chunks are word-aligned; skip id (4) + size field (4) + payload (size, rounded up)
-        pos += 8 + size + (size & 1);
+        let next_pos = pos + 8 + size + (size & 1);
+        if next_pos > wav.len() {
+            anyhow::bail!("chunk size {} would exceed WAV length", size);
+        }
+        pos = next_pos;
     }
     anyhow::bail!("no data chunk found in WAV");
 }
