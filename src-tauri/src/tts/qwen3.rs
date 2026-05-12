@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use reqwest::Client;
 
@@ -18,6 +20,7 @@ impl Qwen3TtsClient {
 
         let bytes = self.http
             .post(format!("{}/tts/speak", self.base))
+            .timeout(Duration::from_secs(60))
             .json(&Req { text })
             .send().await.context("Qwen3-TTS request failed")?
             .error_for_status().context("Qwen3-TTS returned error status")?

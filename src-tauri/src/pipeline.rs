@@ -94,8 +94,13 @@ pub async fn handle_turn(
         let state = app_for_dispatcher.state::<AppState>();
         while let Some(sentence) = sentence_rx.recv().await {
             if state.audio.lock().unwrap().barge_in_pending() { break; }
+            // Strip parenthetical asides (translation notes, pronunciation guides)
+            // before sending to TTS. Malformed fragments like "(How are you today?"
+            // or "= お元気ですか?" cause Qwen3-TTS to loop, generating seconds of
+            // repeated phonemes. Skip the sentence entirely if nothing speakable remains.
+            let Some(clean) = clean_for_tts(&sentence) else { continue; };
             let tts = tts_for_dispatcher.clone();
-            let handle = tokio::spawn(async move { tts.speak(&sentence).await });
+            let handle = tokio::spawn(async move { tts.speak(&clean).await });
             if wav_handle_tx.send(handle).await.is_err() { break; }
         }
     });
@@ -372,6 +377,33 @@ fn flush_sentence(buf: &mut String) -> Option<String> {
     let sentence = buf[..end].trim().to_string();
     *buf = buf[end..].trim_start().to_string();
     if sentence.is_empty() { None } else { Some(sentence) }
+}
+
+/// Prepare a sentence for TTS by removing content that confuses LLM-based TTS models.
+///
+/// Strips:
+/// - Parenthetical blocks `(…)` and `（…）` — LLMs emit these as translation notes
+///   or pronunciation guides; they're meant to be read, not spoken.
+/// - Leading non-word characters left over after stripping (e.g. `= `, `- `).
+///
+/// Returns `None` if nothing speakable remains after cleaning.
+fn clean_for_tts(text: &str) -> Option<String> {
+    let mut out   = String::with_capacity(text.len());
+    let mut depth = 0u32;
+    for ch in text.chars() {
+        match ch {
+            '(' | '（' => depth += 1,
+            ')' | '）' => { depth = depth.saturating_sub(1); }
+            _ if depth == 0 => out.push(ch),
+            _ => {}
+        }
+    }
+    // Strip any leading punctuation / symbols left after paren removal.
+    let trimmed = out.trim_start_matches(|c: char| !c.is_alphanumeric()).trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 /// Scale audio so its peak is 0.9, leaving silence untouched.
