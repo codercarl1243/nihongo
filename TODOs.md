@@ -441,7 +441,6 @@ Add `language_code TEXT NOT NULL DEFAULT 'ja'` to `curriculum`, `vocabulary`, `s
 ---
 
 ## Phase 7 — Journal Feature
-## Phase 7 — Journal Feature
 
 > **Why:** Personal vocabulary (words anchored to the learner's own experiences) has significantly higher retention than abstract word lists. The journal lets a learner write freely; the LLM identifies which words are worth adding to their SRS deck.
 

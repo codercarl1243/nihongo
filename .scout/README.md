@@ -14,7 +14,7 @@ It provides both the `scout` pipeline and the `kb` query tool.
 Once installed, build the local vector index for this project:
 
 ```bash
-kb index ~/projects/codercarl/nihongo
+kb index /Users/carl/projects/codercarl/nihongo
 ```
 
 This is fast and incremental — run it after code changes to keep search results current.
@@ -39,8 +39,8 @@ kb query nihongo "where are API routes defined" --k 8 --fmt json
 
 ```bash
 # Full rebuild (repomix + Ollama + vector index) — slow, do this when architecture changes
-scout ~/projects/codercarl/nihongo
+scout /Users/carl/projects/codercarl/nihongo
 
 # Re-index only (fast, incremental — run after code changes)
-kb index ~/projects/codercarl/nihongo
+kb index /Users/carl/projects/codercarl/nihongo
 ```

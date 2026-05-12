@@ -232,7 +232,7 @@ impl AudioManager {
             config.barge_in_rms_threshold,
             config.barge_in_start_delay.as_millis() as u64,
         );
-        let mut echo_tail = EchoTailTracker::new(Duration::from_millis(400));
+        let mut echo_tail = EchoTailTracker::new(Duration::from_millis(150));
 
         // Whether AEC stream delay has been calibrated from the first hardware callback.
         let mut aec_delay_set = false;
@@ -278,6 +278,7 @@ impl AudioManager {
                     barge_remainder.clear();
                     echo_tail.disarm();
                     if turn_tx.blocking_send(barge_audio).is_err() {
+                        eprintln!("[manager] turn_end receiver dropped on barge-in flush — pipeline task likely died");
                         return Err(anyhow!("turn_end receiver dropped"));
                     }
                 } else {
@@ -403,6 +404,7 @@ impl AudioManager {
                         in_turn = false;
 
                         if turn_tx.blocking_send(full_audio).is_err() {
+                            eprintln!("[manager] turn_end receiver dropped on turn end — pipeline task likely died");
                             return Err(anyhow!("turn_end receiver dropped"));
                         }
                         vad_tx.try_send("VAD 1: Listening").ok(); // [PIPELINE_DEBUG]

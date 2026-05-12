@@ -1,6 +1,341 @@
 {
   "nodes": [
     {
+      "id": ".scout/.scout_cache/analysis_01.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_02.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_03.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_04.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_05.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_06.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_07.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_08.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_09.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_10.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_11.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_12.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_13.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_14.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_15.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_16.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_17.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_18.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_19.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_20.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_21.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_22.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_23.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_24.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_25.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_26.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_27.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_28.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_29.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_30.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_31.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_32.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_33.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_34.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_35.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_36.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_37.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_38.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_39.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_40.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_41.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_42.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_43.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_44.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_45.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_46.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/analysis_47.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_01.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_02.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_03.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_04.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_05.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_06.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_07.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_08.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_09.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_10.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_11.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_12.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_13.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_14.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_15.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_16.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_17.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_18.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_19.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": ".scout/.scout_cache/merge_20.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
       "id": "lib/logging/errorCodes.ts",
       "type": "typescript",
       "parseable": true
@@ -81,11 +416,6 @@
       "parseable": false
     },
     {
-      "id": "scripts/test-integration.sh",
-      "type": "other",
-      "parseable": false
-    },
-    {
       "id": "sidecar/requirements.txt",
       "type": "other",
       "parseable": false
@@ -96,17 +426,7 @@
       "parseable": false
     },
     {
-      "id": "src/components/chatWindow/chatMessage.tsx",
-      "type": "react",
-      "parseable": true
-    },
-    {
       "id": "src/components/chatWindow/input.tsx",
-      "type": "react",
-      "parseable": true
-    },
-    {
-      "id": "src/components/chatWindow/tokenCount.tsx",
       "type": "react",
       "parseable": true
     },
@@ -431,21 +751,6 @@
       "parseable": true
     },
     {
-      "id": "src/styles/components/indicators.css",
-      "type": "stylesheet",
-      "parseable": false
-    },
-    {
-      "id": "src/styles/keyframes/pulse.css",
-      "type": "stylesheet",
-      "parseable": false
-    },
-    {
-      "id": "src/App.tsx",
-      "type": "react",
-      "parseable": true
-    },
-    {
       "id": "src/main.tsx",
       "type": "react",
       "parseable": true
@@ -471,11 +776,6 @@
       "parseable": false
     },
     {
-      "id": "src-tauri/crates/tutor/src/lib.rs",
-      "type": "rust",
-      "parseable": true
-    },
-    {
       "id": "src-tauri/crates/tutor/Cargo.toml",
       "type": "config",
       "parseable": false
@@ -496,11 +796,6 @@
       "parseable": false
     },
     {
-      "id": "CLAUDE.md",
-      "type": "other",
-      "parseable": false
-    },
-    {
       "id": "index.html",
       "type": "html",
       "parseable": false
@@ -512,11 +807,6 @@
     },
     {
       "id": "plan.md",
-      "type": "other",
-      "parseable": false
-    },
-    {
-      "id": "TODOs.md",
       "type": "other",
       "parseable": false
     },
@@ -536,13 +826,48 @@
       "parseable": true
     },
     {
-      "id": "scripts/test-pipeline.sh",
+      "id": ".scout/architecture.md",
       "type": "other",
       "parseable": false
     },
     {
-      "id": "sidecar/start.sh",
+      "id": ".scout/dependencies.json",
+      "type": "config",
+      "parseable": false
+    },
+    {
+      "id": ".scout/README.md",
       "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "scripts/test-integration.sh",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "src/components/chatWindow/chatMessage.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/chatWindow/tokenCount.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/toast/useToast.ts",
+      "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/components/voicevoxStatus/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/voicevoxStatus/voicevoxStatus.css",
+      "type": "stylesheet",
       "parseable": false
     },
     {
@@ -551,14 +876,39 @@
       "parseable": false
     },
     {
-      "id": "src/styles/components/chatWindow.css",
+      "id": "src/styles/components/indicators.css",
       "type": "stylesheet",
       "parseable": false
+    },
+    {
+      "id": "src/styles/keyframes/pulse.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/App.tsx",
+      "type": "react",
+      "parseable": true
     },
     {
       "id": "src-tauri/capabilities/default.json",
       "type": "config",
       "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/tests/aec_barge_in.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/tests/mod.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/barge_in.rs",
+      "type": "rust",
+      "parseable": true
     },
     {
       "id": "src-tauri/crates/audio_engine/src/capture.rs",
@@ -591,11 +941,6 @@
       "parseable": true
     },
     {
-      "id": "src-tauri/crates/db/src/seed.rs",
-      "type": "rust",
-      "parseable": true
-    },
-    {
       "id": "src-tauri/crates/db/src/types.rs",
       "type": "rust",
       "parseable": true
@@ -606,7 +951,37 @@
       "parseable": true
     },
     {
+      "id": "src-tauri/crates/tutor/src/lib.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
       "id": "src-tauri/crates/tutor/src/types.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/bin/test_aec.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/tts/qwen3.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/tts/voicevox.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/commands.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/events.rs",
       "type": "rust",
       "parseable": true
     },
@@ -616,13 +991,43 @@
       "parseable": true
     },
     {
-      "id": ".gitignore",
+      "id": "CLAUDE.md",
       "type": "other",
       "parseable": false
     },
     {
-      "id": "sidecar/models.py",
-      "type": "python",
+      "id": "scripts/test-pipeline.sh",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "sidecar/start.sh",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "sidecar/transcript.txt",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "src/components/badge/badge.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/components/badge/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/card/card.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/components/card/index.tsx",
+      "type": "react",
       "parseable": true
     },
     {
@@ -631,14 +1036,89 @@
       "parseable": true
     },
     {
+      "id": "src/components/progress/index.tsx",
+      "type": "react",
+      "parseable": true
+    },
+    {
+      "id": "src/components/progress/progress.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src/components/toast/toast.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
       "id": "src/lib/api.ts",
       "type": "typescript",
+      "parseable": true
+    },
+    {
+      "id": "src/styles/components/chatWindow.css",
+      "type": "stylesheet",
+      "parseable": false
+    },
+    {
+      "id": "src-tauri/crates/db/src/seed.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/tutor/src/language.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/bin/gen_tts_fixtures.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/tts/mod.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "sidecar/models.py",
+      "type": "python",
+      "parseable": true
+    },
+    {
+      "id": "src/components/toast/index.tsx",
+      "type": "react",
       "parseable": true
     },
     {
       "id": "src-tauri/crates/audio_engine/src/aec.rs",
       "type": "rust",
       "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/audio_engine/src/lib.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/greeting.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/src/pipeline.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": ".gitignore",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "Models.json",
+      "type": "config",
+      "parseable": false
     },
     {
       "id": "package.json",
@@ -656,13 +1136,23 @@
       "parseable": true
     },
     {
-      "id": "src-tauri/crates/audio_engine/src/lib.rs",
-      "type": "rust",
-      "parseable": true
+      "id": "src/styles/global.css",
+      "type": "stylesheet",
+      "parseable": false
     },
     {
       "id": "src-tauri/crates/db/src/store.rs",
       "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src-tauri/crates/tutor/src/session.rs",
+      "type": "rust",
+      "parseable": true
+    },
+    {
+      "id": "src/components/chatWindow/index.tsx",
+      "type": "react",
       "parseable": true
     },
     {
@@ -676,24 +1166,19 @@
       "parseable": true
     },
     {
-      "id": "Models.json",
-      "type": "config",
-      "parseable": false
-    },
-    {
-      "id": "src/styles/global.css",
-      "type": "stylesheet",
-      "parseable": false
-    },
-    {
-      "id": "src-tauri/crates/tutor/src/session.rs",
+      "id": "src-tauri/src/sidecar.rs",
       "type": "rust",
       "parseable": true
     },
     {
-      "id": "src/components/chatWindow/index.tsx",
-      "type": "react",
-      "parseable": true
+      "id": "README.md",
+      "type": "other",
+      "parseable": false
+    },
+    {
+      "id": "TODOs.md",
+      "type": "other",
+      "parseable": false
     },
     {
       "id": "src-tauri/crates/tutor/src/prompt.rs",
@@ -706,9 +1191,9 @@
       "parseable": true
     },
     {
-      "id": "src-tauri/Cargo.toml",
-      "type": "config",
-      "parseable": false
+      "id": "sidecar/server.py",
+      "type": "python",
+      "parseable": true
     },
     {
       "id": "src/lib/useEvents.ts",
@@ -716,19 +1201,14 @@
       "parseable": true
     },
     {
-      "id": "README.md",
-      "type": "other",
-      "parseable": false
-    },
-    {
-      "id": "sidecar/server.py",
-      "type": "python",
-      "parseable": true
-    },
-    {
       "id": "src-tauri/crates/llm/src/client.rs",
       "type": "rust",
       "parseable": true
+    },
+    {
+      "id": "src-tauri/Cargo.toml",
+      "type": "config",
+      "parseable": false
     },
     {
       "id": "src-tauri/crates/audio_engine/src/manager.rs",
@@ -854,6 +1334,11 @@
     },
     {
       "from": "src-tauri/crates/audio_engine/src/lib.rs",
+      "to": "src-tauri/crates/audio_engine/src/barge_in.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/audio_engine/src/lib.rs",
       "to": "src-tauri/crates/audio_engine/src/capture.rs",
       "kind": "imports"
     },
@@ -878,6 +1363,11 @@
       "kind": "imports"
     },
     {
+      "from": "src-tauri/crates/audio_engine/src/tests/mod.rs",
+      "to": "src-tauri/crates/audio_engine/src/tests/aec_barge_in.rs",
+      "kind": "imports"
+    },
+    {
       "from": "src-tauri/crates/db/src/lib.rs",
       "to": "src-tauri/crates/db/src/seed.rs",
       "kind": "imports"
@@ -899,6 +1389,11 @@
     },
     {
       "from": "src-tauri/crates/tutor/src/lib.rs",
+      "to": "src-tauri/crates/tutor/src/language.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/crates/tutor/src/lib.rs",
       "to": "src-tauri/crates/tutor/src/prompt.rs",
       "kind": "imports"
     },
@@ -913,8 +1408,48 @@
       "kind": "imports"
     },
     {
+      "from": "src-tauri/src/lib.rs",
+      "to": "src-tauri/src/commands.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/src/lib.rs",
+      "to": "src-tauri/src/events.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/src/lib.rs",
+      "to": "src-tauri/src/greeting.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/src/lib.rs",
+      "to": "src-tauri/src/pipeline.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/src/lib.rs",
+      "to": "src-tauri/src/sidecar.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/src/tts/mod.rs",
+      "to": "src-tauri/src/tts/qwen3.rs",
+      "kind": "imports"
+    },
+    {
+      "from": "src-tauri/src/tts/mod.rs",
+      "to": "src-tauri/src/tts/voicevox.rs",
+      "kind": "imports"
+    },
+    {
       "from": "src/App.tsx",
       "to": "src/components/chatWindow/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/App.tsx",
+      "to": "src/components/toast/index.tsx",
       "kind": "imports"
     },
     {
@@ -935,6 +1470,26 @@
     {
       "from": "src/components/audioButton/index.tsx",
       "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/badge/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/badge/index.tsx",
+      "to": "src/design-system/primitives/types.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/card/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/card/index.tsx",
+      "to": "src/design-system/primitives/types.ts",
       "kind": "imports"
     },
     {
@@ -979,6 +1534,11 @@
     },
     {
       "from": "src/components/chatWindow/index.tsx",
+      "to": "src/components/voicevoxStatus/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/chatWindow/index.tsx",
       "to": "src/design-system/primitives/index.tsx",
       "kind": "imports"
     },
@@ -1010,6 +1570,61 @@
     {
       "from": "src/components/pipelineFlow/index.tsx",
       "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/progress/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/progress/index.tsx",
+      "to": "src/design-system/primitives/types.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/toast/index.tsx",
+      "to": "src/design-system/components/button/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/toast/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/toast/index.tsx",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/toast/useToast.ts",
+      "to": "src/design-system/types/variant.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/toast/useToast.ts",
+      "to": "src/lib/store.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/voicevoxStatus/index.tsx",
+      "to": "src/components/progress/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/voicevoxStatus/index.tsx",
+      "to": "src/design-system/components/spinner.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/voicevoxStatus/index.tsx",
+      "to": "src/design-system/primitives/index.tsx",
+      "kind": "imports"
+    },
+    {
+      "from": "src/components/voicevoxStatus/index.tsx",
+      "to": "src/lib/store.ts",
       "kind": "imports"
     },
     {
@@ -1183,6 +1798,11 @@
       "kind": "imports"
     },
     {
+      "from": "src/lib/store.ts",
+      "to": "src/design-system/types/variant.ts",
+      "kind": "imports"
+    },
+    {
       "from": "src/lib/useEvents.ts",
       "to": "src/lib/api.ts",
       "kind": "imports"
@@ -1202,7 +1822,10 @@
     "project": "nihongo",
     "ipc_commands": [
       "/asr/transcribe",
-      "start_session"
+      "barge_in",
+      "get_sidecar_read",
+      "start_session",
+      "stop_session"
     ],
     "unresolved_refs": []
   }

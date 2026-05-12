@@ -7,8 +7,8 @@
     },
     {
       "id": "llm",
-      "model": "RakutenAI-7B-instruct-MLX-4bit",
-      "path": "~/llm_models/RakutenAI-7B-instruct-MLX-4bit"
+      "model": "Qwen3-Coder-30B-A3B-Instruct-MLX-5bit",
+      "path": "~/llm_models/Qwen3-Coder-30B-A3B-Instruct-MLX-5bit"
     },
     {
       "id": "tts-cv",
