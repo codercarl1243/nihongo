@@ -178,7 +178,7 @@ def _run_tts(text: str, voice: str) -> bytes:
 
     audio_chunks = []
     sample_rate = 24000
-    for result in tts.generate(text, voice=voice, temperature=0.0):
+    for result in tts.generate(text, voice=voice, temperature=0.6):
         audio_chunks.append(np.array(result.audio))
         sample_rate = result.sample_rate
 
