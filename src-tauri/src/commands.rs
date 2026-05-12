@@ -109,6 +109,6 @@ pub fn barge_in(state: State<'_, AppState>) {
 pub fn get_sidecar_ready(state: State<'_, AppState>) -> bool {
     use std::sync::atomic::Ordering;
     let sidecar_ready  = state.sidecar_ready.load(Ordering::SeqCst);
-    let voicevox_ready = state.voicevox_ready.load(Ordering::SeqCst);
-    sidecar_ready && state.tts.is_ready(sidecar_ready, voicevox_ready)
+    let tts_ready = state.tts_ready.load(Ordering::SeqCst);
+    sidecar_ready && state.tts.is_ready(sidecar_ready, tts_ready)
 }

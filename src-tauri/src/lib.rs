@@ -14,7 +14,7 @@ pub mod pipeline;
 pub mod sidecar;
 pub mod tts;
 
-use tts::{TtsEngine, VoiceVoxClient, DEFAULT_SPEAKER};
+use tts::{TtsEngine, VoiceVoxClient, DEFAULT_SPEAKER, Qwen3TtsClient};
 
 // ---------------------------------------------------------------------------
 // App state
@@ -29,7 +29,7 @@ pub struct AppState {
     pub db:             Mutex<Db>,
     pub session:        Mutex<Option<TutorSession>>,
     pub sidecar_ready:  AtomicBool,
-    pub voicevox_ready: AtomicBool,
+    pub tts_ready: AtomicBool,
 }
 
 // Compile-time path to the sidecar directory; resolves relative to src-tauri/.
@@ -50,17 +50,18 @@ pub fn run() {
             player:         Mutex::new(AudioPlayer::new()),
             aec_sink:       Mutex::new(None),
             llm:            SidecarClient::new(),
-            tts:            TtsEngine::VoiceVox(VoiceVoxClient::new(DEFAULT_SPEAKER)),
+            // tts:            TtsEngine::VoiceVox(VoiceVoxClient::new(DEFAULT_SPEAKER)),
+            tts:            TtsEngine::Qwen3(Qwen3TtsClient::new("http://127.0.0.1:8091")),
             db:             Mutex::new(db),
             session:        Mutex::new(None),
             sidecar_ready:  AtomicBool::new(false),
-            voicevox_ready: AtomicBool::new(false),
+            tts_ready:      AtomicBool::new(false),
         })
         .setup(|app| {
             let sidecar_handle  = app.handle().clone();
-            let voicevox_handle = app.handle().clone();
             tauri::async_runtime::spawn(sidecar::start_sidecar_background(sidecar_handle));
-            tauri::async_runtime::spawn(sidecar::start_voicevox_background(voicevox_handle));
+            // let voicevox_handle = app.handle().clone();
+            // tauri::async_runtime::spawn(sidecar::start_voicevox_background(voicevox_handle));
 
             if let Some(window) = app.get_webview_window("main") {
                 window.on_window_event(|event| {

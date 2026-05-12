@@ -11,7 +11,7 @@ export default function useEvents() {
     const setPromptTokens   = useAppStore((s) => s.setPromptTokens);
     const setMicActive       = useAppStore((s) => s.setMicActive);
     const setIsThinking      = useAppStore((s) => s.setIsThinking);
-    const setVoicevoxStatus  = useAppStore((s) => s.setVoicevoxStatus);
+    const setTtsStatus       = useAppStore((s) => s.setTtsStatus);
     const setPipelineStage   = useAppStore((s) => s.setPipelineStage); // [PIPELINE_DEBUG]
 
     useEffect(() => {
@@ -60,9 +60,9 @@ export default function useEvents() {
                     console.log("[backend] system_message:", e);
                     addMessage('system', e.payload.text);
                 }),
-                listen<{ state: string; progress: number | null; message: string | null }>('voicevox_status', (e) => {
-                    console.log('[backend] voicevox_status:', e.payload.state, e.payload.progress);
-                    setVoicevoxStatus(e.payload);
+                listen<{ state: string; progress: number | null; message: string | null }>('tts_status', (e) => {
+                    console.log('[backend] tts_status:', e.payload.state, e.payload.progress);
+                    setTtsStatus(e.payload);
                 }),
                 listen<{ stage: string }>('pipeline_status', (e) => { // [PIPELINE_DEBUG]
                     setPipelineStage(e.payload.stage);                  // [PIPELINE_DEBUG]
@@ -91,5 +91,5 @@ export default function useEvents() {
             cancelled = true;
             cleanup.forEach((fn) => fn());
         };
-    }, [addMessage, appendToken, finalizeStream, setSessionStatus, setPromptTokens, setMicActive, setIsThinking, setVoicevoxStatus, setPipelineStage]); // [PIPELINE_DEBUG] setPipelineStage
+    }, [addMessage, appendToken, finalizeStream, setSessionStatus, setPromptTokens, setMicActive, setIsThinking, setTtsStatus, setPipelineStage]); // [PIPELINE_DEBUG] setPipelineStage
 }

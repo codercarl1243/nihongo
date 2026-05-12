@@ -4,7 +4,7 @@ use serde::Serialize;
 pub struct SidecarStatusEvent  { pub state: String, pub message: Option<String> }
 
 #[derive(Clone, Serialize)]
-pub struct VoiceVoxStatusEvent {
+pub struct TtsStatusEvent {
     pub state:    String,       // "checking" | "downloading" | "extracting" | "starting" | "ready" | "error"
     pub progress: Option<f32>,  // 0.0–1.0 during "downloading"
     pub message:  Option<String>,

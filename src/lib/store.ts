@@ -3,7 +3,7 @@ import type { Variant } from '../design-system/types/variant';
 
 export type SessionStatus = 'warming_up' | 'idle' | 'starting' | 'ready';
 
-export type VoiceVoxState =
+export type TtsProviderState =
     | 'pending'     // before first event received
     | 'checking'
     | 'downloading'
@@ -27,9 +27,9 @@ export type Message = {
 
 type AppState = {
     sessionStatus: SessionStatus;
-    voicevoxState: VoiceVoxState;
-    voicevoxProgress: number;      // 0–100, meaningful during 'downloading'
-    voicevoxMessage: string | null;
+    ttsState: TtsProviderState;
+    ttsProgress: number;      // 0–100, meaningful during 'downloading'
+    ttsMessage: string | null;
     messages: Message[];
     streamingText: string;
     promptTokens: number;
@@ -39,7 +39,7 @@ type AppState = {
     toasts: Toast[];
 
     setSessionStatus: (status: SessionStatus) => void;
-    setVoicevoxStatus: (payload: { state: string; progress?: number | null; message?: string | null }) => void;
+    setTtsStatus: (payload: { state: string; progress?: number | null; message?: string | null }) => void;
     addMessage: (sender: 'user' | 'tutor' | 'system', text: string) => void;
     appendToken: (token: string) => void;
     finalizeStream: (fullText: string) => void;
@@ -53,9 +53,9 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set) => ({
     sessionStatus: 'warming_up',
-    voicevoxState: 'pending',
-    voicevoxProgress: 0,
-    voicevoxMessage: null,
+    ttsState: 'pending',
+    ttsProgress: 0,
+    ttsMessage: null,
     messages: [],
     streamingText: '',
     promptTokens: 0,
@@ -66,11 +66,11 @@ export const useAppStore = create<AppState>((set) => ({
 
     setSessionStatus: (sessionStatus) => set({ sessionStatus }),
 
-    setVoicevoxStatus: ({ state, progress, message }) =>
+    setTtsStatus: ({ state, progress, message }) =>
         set({
-            voicevoxState:    state as VoiceVoxState,
-            voicevoxProgress: progress != null ? Math.round(progress * 100) : 0,
-            voicevoxMessage:  message ?? null,
+            ttsState:    state as TtsProviderState,
+            ttsProgress: progress != null ? Math.round(progress * 100) : 0,
+            ttsMessage:  message ?? null,
         }),
 
     addMessage: (sender, text) =>

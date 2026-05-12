@@ -2,10 +2,10 @@ import { Stack, Inline } from '../../design-system/primitives';
 import Spinner from '../../design-system/components/spinner';
 import Progress from '../progress';
 import { useAppStore } from '../../lib/store';
-import type { VoiceVoxState } from '../../lib/store';
+import type { TtsProviderState } from '../../lib/store';
 import './voicevoxStatus.css';
 
-const LABEL: Record<VoiceVoxState, string> = {
+const LABEL: Record<TtsProviderState, string> = {
     pending:     'Setting up text-to-speech…',
     checking:    'Checking text-to-speech…',
     downloading: 'Downloading TTS engine (first run only)…',
@@ -16,9 +16,9 @@ const LABEL: Record<VoiceVoxState, string> = {
 };
 
 export default function VoicevoxStatus() {
-    const state    = useAppStore((s) => s.voicevoxState);
-    const progress = useAppStore((s) => s.voicevoxProgress);
-    const message  = useAppStore((s) => s.voicevoxMessage);
+    const state    = useAppStore((s) => s.ttsState);
+    const progress = useAppStore((s) => s.ttsProgress);
+    const message  = useAppStore((s) => s.ttsMessage);
 
     if (state === 'ready') return null;
 

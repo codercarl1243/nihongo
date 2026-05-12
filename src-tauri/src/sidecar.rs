@@ -4,7 +4,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_stream::StreamExt as _;
 
-use crate::events::{SidecarStatusEvent, VoiceVoxStatusEvent};
+use crate::events::{SidecarStatusEvent, TtsStatusEvent};
+use crate::tts::TtsEngine;
 use crate::AppState;
 use crate::SIDECAR_DIR;
 
@@ -56,11 +57,21 @@ pub async fn start_sidecar_background(app: AppHandle) {
 
     let mark_ready = || {
         use std::sync::atomic::Ordering;
-        app.state::<AppState>().sidecar_ready.store(true, Ordering::SeqCst);
+        let state = app.state::<AppState>();
+        state.sidecar_ready.store(true, Ordering::SeqCst);
         let _ = app.emit("sidecar_status", SidecarStatusEvent {
             state: "ready".into(),
             message: None,
         });
+        // Qwen3 TTS is served by the sidecar — mark TTS ready alongside it.
+        if matches!(state.tts, TtsEngine::Qwen3(_)) {
+            state.tts_ready.store(true, Ordering::SeqCst);
+            let _ = app.emit("tts_status", TtsStatusEvent {
+                state:    "ready".into(),
+                progress: None,
+                message:  None,
+            });
+        }
     };
 
     if sidecar_is_up().await {
@@ -115,11 +126,11 @@ async fn voicevox_is_up() -> bool {
         .unwrap_or(false)
 }
 
-/// Emits `voicevox_status` events. States:
+/// Emits `tts_status` events. States:
 ///   "checking" → "downloading" (with progress 0.0–1.0) → "extracting" → "starting" → "ready" | "error"
 pub async fn start_voicevox_background(app: AppHandle) {
     if let Err(e) = run_voicevox_background(&app).await {
-        let _ = app.emit("voicevox_status", VoiceVoxStatusEvent {
+        let _ = app.emit("tts_status", TtsStatusEvent {
             state:    "error".into(),
             progress: None,
             message:  Some(e.to_string()),
@@ -129,7 +140,7 @@ pub async fn start_voicevox_background(app: AppHandle) {
 
 async fn run_voicevox_background(app: &AppHandle) -> anyhow::Result<()> {
     let emit = |state: &str, progress: Option<f32>, message: Option<&str>| {
-        let _ = app.emit("voicevox_status", VoiceVoxStatusEvent {
+        let _ = app.emit("tts_status", TtsStatusEvent {
             state:    state.to_string(),
             progress,
             message:  message.map(str::to_string),
@@ -141,7 +152,7 @@ async fn run_voicevox_background(app: &AppHandle) -> anyhow::Result<()> {
     // Already running (e.g. leftover from previous launch).
     if voicevox_is_up().await {
         use std::sync::atomic::Ordering;
-        app.state::<AppState>().voicevox_ready.store(true, Ordering::SeqCst);
+        app.state::<AppState>().tts_ready.store(true, Ordering::SeqCst);
         emit("ready", None, None);
         return Ok(());
     }
@@ -169,7 +180,7 @@ async fn run_voicevox_background(app: &AppHandle) -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_secs(2)).await;
         if voicevox_is_up().await {
             use std::sync::atomic::Ordering;
-            app.state::<AppState>().voicevox_ready.store(true, Ordering::SeqCst);
+            app.state::<AppState>().tts_ready.store(true, Ordering::SeqCst);
             emit("ready", None, None);
             return Ok(());
         }
@@ -184,7 +195,7 @@ async fn download_and_extract(
     engine_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     let emit = |state: &str, progress: Option<f32>, message: Option<&str>| {
-        let _ = app.emit("voicevox_status", VoiceVoxStatusEvent {
+        let _ = app.emit("tts_status", TtsStatusEvent {
             state:    state.to_string(),
             progress,
             message:  message.map(str::to_string),

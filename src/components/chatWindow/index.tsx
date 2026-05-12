@@ -11,10 +11,10 @@ export default function ChatWindow() {
     const { sessionStatus, messages, streamingText, scrollRef, start, stop } = useChat();
     const micActive      = useAppStore((s) => s.micActive);
     const isThinking     = useAppStore((s) => s.isThinking);
-    const voicevoxState  = useAppStore((s) => s.voicevoxState);
+    const ttsState       = useAppStore((s) => s.ttsState);
     const pipelineStage  = useAppStore((s) => s.pipelineStage); // [PIPELINE_DEBUG]
 
-    const voicevoxReady = voicevoxState === 'ready';
+    const ttsReady = ttsState === 'ready';
 
     return (
         <Stack
@@ -58,7 +58,7 @@ export default function ChatWindow() {
 
             <SessionButton
                 status={sessionStatus}
-                voicevoxReady={voicevoxReady}
+                ttsReady={ttsReady}
                 onStart={start}
                 onStop={stop}
             />

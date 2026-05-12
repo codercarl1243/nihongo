@@ -22,9 +22,9 @@ impl TtsEngine {
 
     /// Returns true when this engine's backing service is confirmed healthy.
     /// Only the active variant is consulted — unused providers are ignored.
-    pub fn is_ready(&self, sidecar_ready: bool, voicevox_ready: bool) -> bool {
+    pub fn is_ready(&self, sidecar_ready: bool, tts_ready: bool) -> bool {
         match self {
-            Self::VoiceVox(_) => voicevox_ready,
+            Self::VoiceVox(_) => tts_ready,
             Self::Qwen3(_)    => sidecar_ready,
         }
     }
