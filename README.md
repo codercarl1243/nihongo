@@ -1,6 +1,6 @@
 # Nihongo Tutor
 
-> Retiring this app to build a candle specific app.  see [kaiwa flow](https://github.com/codercarl1243/kaiwa)
+> Retiring this app to build a candle specific app.  see [kaiwa flow](https://github.com/codercarl1243/kaiwaflow)
 
 A local, privacy-first Japanese language tutor that listens, understands, and responds naturally — handling mixed English and Japanese conversation without missing a beat.
 
